@@ -1,1 +1,27 @@
 from fastapi import FastAPI
+from app.infrastructure.mysql import create_engine, create_mysql_session_factory
+from app.infrastructure.redis import create_redis_client
+from app.core.config import settings
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    mysql_engine = create_engine(settings)
+    app.state.mysql_session_factory = create_mysql_session_factory(mysql_engine)
+    app.state.redis_client = create_redis_client(settings)
+    try:
+        yield
+    finally:
+        await mysql_engine.dispose()
+        await app.state.redis_client.aclose()
+
+app = FastAPI(lifespan=lifespan)
+
+@app.get("/health")
+async def health_check():
+    async with app.state.mysql_session_factory() as session:
+        await session.execute(text("SELECT 1"))
+    pong = await request.app.state.redis_client.ping()
+    return {"mysql": "ok", "redis": pong}
+

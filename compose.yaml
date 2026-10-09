@@ -1,4 +1,4 @@
-name: trip-plan
+name: AI-interview
 
 services:
   mysql:
@@ -81,12 +81,12 @@ services:
 
 volumes:
   mysql_data:
-    name: trip-plan_mysql_data
+    name: interview_mysql_data
 
   redis_data:
-    name: trip-plan_redis_data
+    name: interview_redis_data
 
 networks:
   app_net:
-    name: trip-plan_net
+    name: interview_net
     driver: bridge
