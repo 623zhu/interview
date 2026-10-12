@@ -14,10 +14,9 @@ cryptography==50.0.0
 # Redis
 redis==5.2.1
 
-# --- 以下依赖等到对应里程碑开始实现时再解开，不要提前安装 ---
 # 用户与认证
-# PyJWT==2.13.0
-# pwdlib[argon2]==0.3.0
-# email-validator==2.3.0
-# python-multipart==0.0.32
-# aiosmtplib==5.1.2
+PyJWT==2.13.0
+pwdlib[argon2]==0.3.0
+email-validator==2.3.0
+python-multipart==0.0.32
+aiosmtplib==5.1.2

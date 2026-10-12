@@ -5,6 +5,7 @@ from app.core.config import settings
 from contextlib import asynccontextmanager
 from sqlalchemy import text
 
+from app.api.user import router as user_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -26,3 +27,4 @@ async def health_check(request: Request):
     pong = await request.app.state.redis_client.ping()
     return {"mysql": "ok", "redis": pong}
 
+app.include_router(user_router)

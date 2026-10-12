@@ -16,6 +16,10 @@
 
 - 新增用户表，用于保存注册账号。邮箱不可重复，密码只存哈希。
 
+### Changed
+
+- 接口成功时直接返回资源，不再使用 `code`、`message`、`data` 外壳。
+
 ### Database / Deployment Notes
 
 - 数据库迁移：在 `backend/` 执行 `alembic upgrade head`，版本 `cc267a266b69`，创建 `users` 表。
