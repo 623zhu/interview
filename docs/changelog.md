@@ -14,21 +14,15 @@
 
 ### Added
 
-- 待补充
+- 新增用户表，用于保存注册账号。邮箱不可重复，密码只存哈希。
 
-### Changed
+### Database / Deployment Notes
 
-- 待补充
+- 数据库迁移：在 `backend/` 执行 `alembic upgrade head`，版本 `cc267a266b69`，创建 `users` 表。
+- 回滚：`alembic downgrade -1`，删除 `users` 表及其数据。
+- 配置变更：无。
 
-### Fixed
-
-- 待补充
-
-### Known Issues
-
-- 待补充
-
-## [版本号] - YYYY-MM-DD
+## [版本号] 
 
 ### Added
 
