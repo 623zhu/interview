@@ -1,5 +1,4 @@
 from datetime import datetime,timezone
-from turtle import up
 
 from sqlalchemy.dialects.mysql import BIGINT,DATETIME
 from sqlalchemy.orm import Mapped,mapped_column,DeclarativeBase
