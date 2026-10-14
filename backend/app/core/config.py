@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     smtp_password: str
     smtp_from: str
 
+    # jwt
+    jwt_secret: str
+    jwt_algorithm: str
+    jwt_access_token_expires_minutes: int
+    jwt_refresh_token_expires_days: int
+
 settings = Settings()
 
 
