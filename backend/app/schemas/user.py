@@ -38,3 +38,7 @@ class ResetPasswordResponse(BaseModel):
 
 class ResetPasswordVerificationCodeRequest(BaseModel):
     email:EmailStr=Field(...,description="邮箱")
+
+
+class LogoutRequest(BaseModel):
+    refresh_token:str=Field(...,description="刷新令牌")

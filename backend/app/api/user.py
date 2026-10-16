@@ -2,14 +2,16 @@ from fastapi import APIRouter,status,Request,HTTPException
 from app.schemas.user import (
     UserCreateRequest,UserCreateResponse,
     UserVerifyEmailRequest,UserLoginRequest,UserLoginResponse,
-    ResetPasswordRequest,ResetPasswordResponse,ResetPasswordVerificationCodeRequest
+    ResetPasswordRequest,ResetPasswordResponse,ResetPasswordVerificationCodeRequest,
+    LogoutRequest
 )
 
 from app.service.user import (
     create_user_service,login_user_service,reset_password_service,
-    send_verify_email_service,send_reset_password_verification_code_service,
+    send_verify_email_service,send_reset_password_verification_code_service,logout_user_service,
     EmailVerifyCodeError,UserAlreadyExistsError,
     UserNotFoundError,InvalidPasswordError,
+    InvalidTokenError,
 )
 
 router = APIRouter(prefix="/api/v1/users",tags=["users"])
@@ -62,7 +64,7 @@ async def create_user_verify_email(body:UserVerifyEmailRequest,request:Request):
 async def login_user(body:UserLoginRequest,request:Request)->UserLoginResponse:
     async with request.app.state.mysql_session_factory() as session:
         try:
-            issued_token = await login_user_service(body.email,body.password,session)
+            issued_token = await login_user_service(body.email,body.password,session,request.app.state.redis_client)
             return UserLoginResponse(
                 access_token=issued_token.access_token,
                 refresh_token=issued_token.refresh_token,
@@ -108,3 +110,15 @@ async def send_reset_password_verification_code(body:ResetPasswordVerificationCo
     except UserNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail="用户不存在")
     return {}
+
+@router.delete(
+    "/session",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="退出登录",
+    description="吊销当前刷新令牌",
+)
+async def logout_user(body:LogoutRequest,request:Request):
+    try:
+        await logout_user_service(body.refresh_token,request.app.state.redis_client)
+    except InvalidTokenError as e:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="无效的刷新令牌")

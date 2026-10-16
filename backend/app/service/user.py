@@ -4,7 +4,6 @@ from app.models.user import User
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-import random
 import secrets
 from pwdlib import PasswordHash
 from email.message import EmailMessage
@@ -27,6 +26,10 @@ class UserNotFoundError(Exception):
 
 class InvalidPasswordError(Exception):
     pass
+
+class InvalidTokenError(Exception):
+    pass
+
 
 async def create_user_service(
     email:str,
@@ -147,6 +150,7 @@ async def login_user_service(
     email:str,
     password:str,
     session:AsyncSession,
+    redis:Redis,
 ):
     result = await session.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
@@ -159,6 +163,11 @@ async def login_user_service(
     refresh_expires = timedelta(days=settings.jwt_refresh_token_expires_days)
     access_token = create_token(user.id,"access",access_expires)
     refresh_token = create_token(user.id,"refresh",refresh_expires)
+    await redis.set(
+        f"token:refresh:{user.id}",
+        refresh_token,
+        ex=int(refresh_expires.total_seconds()),
+    )
     return IssuedToken(
         access_token=access_token,
         refresh_token=refresh_token,
@@ -200,3 +209,23 @@ async def reset_password_service(
     user.password_hash = password_hash.hash(new_password)
     await session.commit()
     await redis.delete(code_key)
+
+async def logout_user_service(
+    refresh_token:str,
+    redis:Redis,
+)->None:
+    try:
+        payload = jwt.decode(
+            refresh_token,
+            settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm]
+        )
+    except jwt.InvalidTokenError:
+        raise InvalidTokenError
+    if payload["type"] != "refresh":
+        raise InvalidTokenError
+    key = f"token:refresh:{payload['sub']}"
+    stored = await redis.get(key)
+    if stored is None or stored != refresh_token:
+        return 
+    await redis.delete(key) 
