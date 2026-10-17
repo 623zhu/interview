@@ -79,18 +79,18 @@ async function onSubmit() {
   background: #eef2f6;
 }
 .panel {
-  width: min(100%, 420px);
-  padding: 36px 32px 28px;
+  width: min(100%, 360px);
+  padding: 28px 24px 20px;
   background: #fff;
   border-radius: 16px;
   box-shadow: 0 12px 40px rgba(31, 42, 55, 0.12);
 }
 h1 {
   margin: 0;
-  font-size: 32px;
+  font-size: 26px;
 }
 .subtitle {
-  margin: 8px 0 28px;
+  margin: 6px 0 18px;
   color: var(--el-text-color-secondary);
 }
 .row {
