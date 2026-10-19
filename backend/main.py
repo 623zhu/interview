@@ -2,6 +2,7 @@ from fastapi import FastAPI,Request
 from app.infrastructure.mysql import create_engine, create_mysql_session_factory
 from app.infrastructure.redis import create_redis_client
 from app.core.config import settings
+from app.infrastructure.llm import create_llm_client
 from contextlib import asynccontextmanager
 from sqlalchemy import text
 
@@ -13,6 +14,7 @@ async def lifespan(app: FastAPI):
     mysql_engine = create_engine(settings)
     app.state.mysql_session_factory = create_mysql_session_factory(mysql_engine)
     app.state.redis_client = create_redis_client(settings)
+    app.state.llm_client = create_llm_client(settings)
     try:
         yield
     finally:

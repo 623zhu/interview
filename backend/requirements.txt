@@ -24,3 +24,6 @@ aiosmtplib==5.1.2
 # 文件上传与存储
 pypdf==5.4.0
 python-docx==1.1.2
+
+# llm
+openai==1.81.0

@@ -39,6 +39,12 @@ class Settings(BaseSettings):
 
     # resume
     resume_upload_dir: str
+
+    #llm
+    llm_api_key: str
+    llm_model_light: str
+    llm_model_heavy: str
+    llm_base_url: str
     
 settings = Settings()
 
