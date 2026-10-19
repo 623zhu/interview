@@ -20,6 +20,7 @@ async def lifespan(app: FastAPI):
     finally:
         await mysql_engine.dispose()
         await app.state.redis_client.aclose()
+        await app.state.llm_client.close()
 
 app = FastAPI(lifespan=lifespan)
 

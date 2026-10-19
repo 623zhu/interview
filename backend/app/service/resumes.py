@@ -9,7 +9,8 @@ from docx import Document
 from app.core.config import settings
 from app.models.resumes import Resume
 from sqlalchemy import select
-
+from openai import AsyncOpenAI
+from app.schemas.resumes import ResumeProfile
 MAX_FILE_BYTES=10*1024*1024
 MAX_TEXT_CHARS=20_000
 
@@ -17,6 +18,13 @@ ALLOWED = {
     ".pdf": "application/pdf",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
+
+EXTRACT_PROFILE_PROMPT="""
+你是一个专业的简历分析专家.
+你从简历原文中提取结构化信息,只能返回json格式。
+只使用原文中出现的内容，不要编造经历、公司、时间或技能。
+原文没有的字段用 null 或空数组。
+"""
 
 class ResumeFileInvalidError(Exception):
     pass
@@ -35,7 +43,8 @@ def extract_text(content:bytes,shuffix:str)->str:
 async def upload_resume_service(
     file:UploadFile,
     user_id:int,
-    session:AsyncSession
+    session:AsyncSession,
+    llm_client:AsyncOpenAI,
 )->Resume:
     filename = file.filename or ""
     suffix = Path(filename).suffix.lower()
@@ -89,6 +98,13 @@ async def upload_resume_service(
     
     resume.raw_text = text
     resume.status = "ready"
+    try:
+        profile = await extract_profile_service(text,llm_client,settings.llm_model_light)
+    except Exception:
+        resume.error_detail = "结构化失败"
+        await session.commit()
+        return resume
+    resume.profile = profile.model_dump()
     resume.error_detail = None
     await session.commit()
     return resume
@@ -101,3 +117,23 @@ async def get_resumes_list_service(
         select(Resume).where(Resume.user_id == user_id).order_by(Resume.created_at.desc())
     )
     return list(result.scalars().all())
+
+# 结构化解析简历
+async def extract_profile_service(
+    raw_text:str,
+    llm_client:AsyncOpenAI,
+    model:str,
+)->ResumeProfile:
+    completion = await llm_client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": EXTRACT_PROFILE_PROMPT},
+            {"role": "user", "content": raw_text},
+        ],
+        response_format={"type": "json_object"},
+    )
+    parsed = completion.choices[0].message.content
+    if not parsed:
+        raise ValueError("empty profile")
+    return ResumeProfile.model_validate_json(parsed)
+

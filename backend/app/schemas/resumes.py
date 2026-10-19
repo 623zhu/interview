@@ -23,3 +23,29 @@ class ResumeGetResponse(BaseModel):
     media_type: str
     status: str
     created_at: datetime
+
+class EducationItem(BaseModel):
+    school: str
+    degree: str | None = None
+    major: str | None = None
+    start: str | None = None
+    end: str | None = None
+
+class ExperienceItem(BaseModel):
+    company: str
+    title: str | None = None
+    start: str | None = None
+    end: str | None = None
+    highlights: list[str] = Field(default_factory=list)
+
+class ProjectItem(BaseModel):
+    name: str
+    role: str | None = None
+    highlights: list[str] = Field(default_factory=list)
+
+class ResumeProfile(BaseModel):
+    name: str | None = None
+    education: list[EducationItem] = Field(default_factory=list)
+    experience: list[ExperienceItem] = Field(default_factory=list)
+    projects: list[ProjectItem] = Field(default_factory=list)
+    skills: list[str] = Field(default_factory=list)

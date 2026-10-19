@@ -19,7 +19,7 @@ async def upload_resume(
 )->ResumeUploadResponse:
     async with request.app.state.mysql_session_factory() as session:
         try:
-            resume = await upload_resume_service(file,current_user.id,session)
+            resume = await upload_resume_service(file,current_user.id,session,request.app.state.llm_client,)
             return ResumeUploadResponse.model_validate(resume)
         except ResumeFileInvalidError as e:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,detail=str(e))
