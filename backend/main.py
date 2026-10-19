@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from sqlalchemy import text
 
 from app.api.user import router as user_router
+from app.api.resumes import router as resumes_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -28,3 +29,4 @@ async def health_check(request: Request):
     return {"mysql": "ok", "redis": pong}
 
 app.include_router(user_router)
+app.include_router(resumes_router)

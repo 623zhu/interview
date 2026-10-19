@@ -8,6 +8,7 @@
 | --- | --- |
 | 创建或修改数据表、字段、约束、索引、迁移或 ORM 模型 | 先读 `docs/rules/database.md`，再把表设计写入 `docs/database.md` |
 | 改接口、认证、请求响应或业务规则 | 先读 `docs/rules/API.md`，再读 `docs/api.md` |
+| 设计或实现面试计划、追问、评估、题库或报告 | `docs/interview-design.md` |
 | 记录发布说明、数据库迁移或配置变更 | `docs/changelog.md` |
 
 ## 维护

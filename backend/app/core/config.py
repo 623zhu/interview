@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     jwt_access_token_expires_minutes: int
     jwt_refresh_token_expires_days: int
 
+    # resume
+    resume_upload_dir: str
+    
 settings = Settings()
 
 

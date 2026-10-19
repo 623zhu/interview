@@ -1,3 +1,5 @@
+import { useAuthStore } from '@/stores/auth'
+
 export class ApiError extends Error {
     status: number
     constructor(status: number, message: string) {
@@ -19,9 +21,11 @@ function errorMessage(detail: unknown): string {
 }
 
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const accessToken = useAuthStore().accessToken
     const response = await fetch(`/api${path}`, {
         ...options,
         headers: {
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
             'Content-Type': 'application/json',
             ...options.headers,
         },
