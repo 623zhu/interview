@@ -26,6 +26,8 @@ if config.config_file_name is not None:
 from app.models.base import Base
 from app.models.user import User
 from app.models.resumes import Resume
+from app.models.interview_sessions import InterviewSession
+from app.models.topic_cards import TopicCard
 
 target_metadata = Base.metadata
 

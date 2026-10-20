@@ -45,6 +45,11 @@ class Settings(BaseSettings):
     llm_model_light: str
     llm_model_heavy: str
     llm_base_url: str
+
+    # embedding
+    embedding_model: str
+    embedding_base_url: str
+    embedding_api_key: str
     
 settings = Settings()
 

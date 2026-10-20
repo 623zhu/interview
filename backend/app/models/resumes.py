@@ -1,7 +1,6 @@
-from sqlalchemy import String, Integer, ForeignKey, Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import String, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column
 from app.models.base import Base, TimestampMixin
-from app.models.user import User
 from sqlalchemy.dialects.mysql import BIGINT,MEDIUMTEXT,JSON
 
 class Resume(TimestampMixin, Base):
