@@ -1,0 +1,554 @@
+[
+  {
+    "key": "java-hashmap-concurrent",
+    "name": "HashMap 与 ConcurrentHashMap",
+    "summary": "HashMap 扩容与并发问题，以及 ConcurrentHashMap 如何保证并发读写。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "HashMap 在并发 put 时可能丢数据，JDK7 扩容还可能成环"},
+      {"id": "p2", "text": "ConcurrentHashMap 不允许 null key/value，用 CAS 和 synchronized 保证桶级并发"},
+      {"id": "p3", "text": "size/扩容在 ConcurrentHashMap 里是近似或协助完成的，不能当精确计数器"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "多线程同时写 HashMap 会出现什么问题"},
+      {"id": "d2", "intent": "ConcurrentHashMap 的 put 如何避免锁整张表"},
+      {"id": "d3", "intent": "项目里为什么选它，有没有用过 computeIfAbsent 的坑"}
+    ],
+    "pitfalls": [
+      "把 ConcurrentHashMap 当成完全无锁",
+      "用它的 size 做精确限流或库存"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-volatile-happens-before",
+    "name": "volatile 与可见性",
+    "summary": "volatile 保证可见性和有序性，不保证复合操作原子性。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "volatile 写对后续读有 happens-before，能刷新工作内存"},
+      {"id": "p2", "text": "禁止指令重排，但不能让 i++ 变成原子操作"},
+      {"id": "p3", "text": "状态标志、双重检查里的可见实例适合用 volatile，计数要用原子类或锁"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "不用 volatile 时，另一个线程为什么可能看不到写入"},
+      {"id": "d2", "intent": "为什么 volatile int 做计数仍然会丢更新"},
+      {"id": "d3", "intent": "你们项目里哪处必须用它，不用会怎样"}
+    ],
+    "pitfalls": [
+      "把 volatile 当锁用",
+      "认为双重检查单例只加 synchronized 就够"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-synchronized-reentrantlock",
+    "name": "synchronized 与 ReentrantLock",
+    "summary": "两种互斥手段的可重入、中断、公平性和条件队列差异。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "两者都可重入；synchronized 退出自动释放，Lock 必须在 finally 释放"},
+      {"id": "p2", "text": "ReentrantLock 可响应中断、可尝试加锁、可公平锁，synchronized 不能"},
+      {"id": "p3", "text": "多个条件队列用 Condition；synchronized 只有一个 wait/notify 队列"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "什么场景必须用 ReentrantLock 而不是 synchronized"},
+      {"id": "d2", "intent": "忘记 unlock 会发生什么，代码上怎么防"},
+      {"id": "d3", "intent": "公平锁解决了什么，为什么默认不公平"}
+    ],
+    "pitfalls": [
+      "Lock.lock() 后不写 finally",
+      "把公平锁当成更高性能选项"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-thread-pool",
+    "name": "线程池参数与拒绝策略",
+    "summary": "核心线程、队列、最大线程的执行顺序，以及拒绝策略如何选。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "任务先给 core，再进队列，队列满才扩到 max，再满才拒绝"},
+      {"id": "p2", "text": "无界队列会让 max 形同虚设，容易把内存打满"},
+      {"id": "p3", "text": "CallerRuns、Abort、Discard、DiscardOldest 适用场景不同，生产默认 Abort 更安全"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "core=4、queue=100、max=8 时第 5 个任务去哪"},
+      {"id": "d2", "intent": "Executors.newFixedThreadPool 的队列有什么风险"},
+      {"id": "d3", "intent": "你们接口线程池怎么定参数、拒绝时怎么对用户"}
+    ],
+    "pitfalls": [
+      "生产用 Executors 工厂方法",
+      "以为设置了 maxPoolSize 就一定能扩容"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-gc-basics",
+    "name": "GC 与常见收集器",
+    "summary": "分代假设、Minor/Mixed/Full GC 的差别，以及 G1 的大致工作方式。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "对象优先在年轻代分配，熬过几次 Minor GC 再进老年代"},
+      {"id": "p2", "text": "G1 按 Region 回收，Mixed GC 同时收年轻代和部分老年代 Region"},
+      {"id": "p3", "text": "STW 暂停时间和吞吐量是权衡，不是停得越短越好"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Minor GC 频繁通常说明什么"},
+      {"id": "d2", "intent": "G1 的 Mixed GC 和 Full GC 有什么区别"},
+      {"id": "d3", "intent": "你们线上看过 GC 日志或监控吗，怎么判断要调参"}
+    ],
+    "pitfalls": [
+      "把所有停顿都叫 Full GC",
+      "堆越大越好，忽略暂停时间"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-oom-diagnosis",
+    "name": "OOM 排查",
+    "summary": "堆、元空间、直接内存等不同 OOM，以及 dump 和 MAT 的排查路径。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "Heap OOM 和 Metaspace/DirectBuffer OOM 原因不同，不能都加 -Xmx"},
+      {"id": "p2", "text": "HeapDumpOnOutOfMemoryError 加上 MAT 看支配树和 GC Root"},
+      {"id": "p3", "text": "常见根因是泄漏（没关连接、无界缓存）或流量峰值，不是 GC 算法选错"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "看到 java.lang.OutOfMemoryError 后先看哪一行、先抓什么"},
+      {"id": "d2", "intent": "如何区分泄漏和单纯并发太高"},
+      {"id": "d3", "intent": "你们线上有没有处理过一次，最后改了什么"}
+    ],
+    "pitfalls": [
+      "不看类型直接加大堆",
+      "生产没开 dump，事后无法复盘"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-index-leftmost",
+    "name": "联合索引与最左前缀",
+    "summary": "联合索引何时能用上，范围查询如何截断后续列。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "联合索引按最左前缀匹配，跳过左列通常用不上后面的列"},
+      {"id": "p2", "text": "范围条件会截断后续等值列的索引使用"},
+      {"id": "p3", "text": "列顺序应按等值、区分度、排序需求来设计，不是随意拼"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "什么情况下这条联合索引不会被用到"},
+      {"id": "d2", "intent": "为什么范围条件后面的列用不上"},
+      {"id": "d3", "intent": "你们慢查询是怎么验证改索引有效的"}
+    ],
+    "pitfalls": [
+      "给低基数列单独建索引",
+      "WHERE 里对索引列做函数导致无法使用索引"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-covering-index",
+    "name": "覆盖索引与回表",
+    "summary": "二级索引查出全部所需列即可避免回表，和最左前缀不是同一件事。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "InnoDB 二级索引叶子存主键，再拿主键回聚集索引叫回表"},
+      {"id": "p2", "text": "查询列都在二级索引上就是覆盖索引，Extra 常见 Using index"},
+      {"id": "p3", "text": "SELECT * 很难覆盖，只查必要列才有机会"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "回表是怎么发生的，为什么会慢"},
+      {"id": "d2", "intent": "怎样改 SQL 或索引变成覆盖索引"},
+      {"id": "d3", "intent": "EXPLAIN 里你看哪些列判断有没有回表"}
+    ],
+    "pitfalls": [
+      "把覆盖索引和最左前缀混为一谈",
+      "为了覆盖把很多无关列塞进联合索引"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-isolation-level",
+    "name": "事务隔离级别",
+    "summary": "脏读、不可重复读、幻读与 RC/RR 的对应关系，以及当前读和快照读。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "读未提交会脏读；RC 解决脏读，RR 解决不可重复读"},
+      {"id": "p2", "text": "InnoDB RR 用 MVCC 快照读，加锁的当前读仍可能看到新插入并靠间隙锁防幻读"},
+      {"id": "p3", "text": "默认 RR；很多互联网业务用 RC 减少间隙锁，但要自己处理幻读"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "用例子说明不可重复读和幻读的差别"},
+      {"id": "d2", "intent": "快照读和当前读分别是哪些 SQL"},
+      {"id": "d3", "intent": "你们库的隔离级别是什么，为什么这么选"}
+    ],
+    "pitfalls": [
+      "认为 RR 下所有读都不会看到幻影行",
+      "把隔离级别和锁粒度当成一回事"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-gap-lock",
+    "name": "间隙锁与幻读",
+    "summary": "RR 下当前读如何用间隙锁/临键锁防止幻读，以及它如何造成锁等待。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "间隙锁锁的是索引记录之间的间隔，阻止向该间隔插入"},
+      {"id": "p2", "text": "等值查询在唯一索引命中记录时通常不加间隙；范围或非唯一索引容易加临键锁"},
+      {"id": "p3", "text": "RC 几乎不用间隙锁，所以幻读要靠业务或唯一约束处理"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么 UPDATE 一个不存在的值也会堵住别人 INSERT"},
+      {"id": "d2", "intent": "怎样用 EXPLAIN 或锁等待日志判断是间隙锁"},
+      {"id": "d3", "intent": "你们有没有因为间隙锁导致的超时，后来怎么改 SQL"}
+    ],
+    "pitfalls": [
+      "以为没查到行就不会加锁",
+      "大范围 UPDATE/DELETE 不带合适索引"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-slow-query",
+    "name": "慢查询定位",
+    "summary": "从慢日志到 EXPLAIN、到改 SQL/索引的一条排查路径。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "先确认是慢 SQL 本身还是锁等待、机器 IO"},
+      {"id": "p2", "text": "EXPLAIN 看 type、key、rows、Extra；Using filesort/temporary 要解释原因"},
+      {"id": "p3", "text": "改完用同样条件和数据量验证，不要只看开发库几行数据"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "线上发现接口变慢，你怎么确认是哪条 SQL"},
+      {"id": "d2", "intent": "EXPLAIN 里哪几个字段会让你决定加索引"},
+      {"id": "d3", "intent": "加索引之外还有哪些改法，比如改查询条件或归档"}
+    ],
+    "pitfalls": [
+      "只看执行时间不看扫描行数",
+      "在空表上 EXPLAIN 就下结论"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-cache-problems",
+    "name": "缓存穿透、击穿、雪崩",
+    "summary": "三种失效形态的原因和常用防护，不要混为一谈。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "穿透是查不存在的数据打到库；可用空值缓存或布隆过滤器"},
+      {"id": "p2", "text": "击穿是热点 key 过期瞬间打到库；可用互斥锁重建或逻辑过期"},
+      {"id": "p3", "text": "雪崩是大量 key 同时失效或 Redis 挂掉；过期时间加随机、多级缓存、限流降级"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "用一次故障说明三者中你遇到的是哪一种"},
+      {"id": "d2", "intent": "空值缓存的 TTL 怎么定，会有什么副作用"},
+      {"id": "d3", "intent": "Redis 宕机时接口还要不要扛，你们怎么降级"}
+    ],
+    "pitfalls": [
+      "三种问题用同一套方案",
+      "布隆过滤器误判后无法区分“没有”和“可能有”"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-cache-inconsistency",
+    "name": "缓存与数据库不一致",
+    "summary": "先更库再删缓存的常见做法，以及删除失败、并发读写的补偿。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis", "mysql"],
+    "key_points": [
+      {"id": "p1", "text": "先更新数据库再删除缓存，比先更新缓存更不容易留下脏数据"},
+      {"id": "p2", "text": "删缓存失败要用重试或消息补偿，不能只打一行日志"},
+      {"id": "p3", "text": "读写并发仍可能把旧值写回缓存，热点可用延迟双删或版本号"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么不推荐先改缓存再改库"},
+      {"id": "d2", "intent": "删除失败怎么办，谁来保证最终一致"},
+      {"id": "d3", "intent": "你们能接受多久的不一致，有没有可量化的约定"}
+    ],
+    "pitfalls": [
+      "把延迟双删当成一定正确",
+      "缓存和库双写却没有任何对账"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-persistence",
+    "name": "RDB 与 AOF",
+    "summary": "两种持久化的丢失窗口、恢复速度，以及混合持久化。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "RDB 是某个时刻的快照，恢复快，但两次快照之间的写入会丢"},
+      {"id": "p2", "text": "AOF 记写命令，everysec 最多丢约一秒，文件更大、重写有开销"},
+      {"id": "p3", "text": "缓存场景可关持久化；当数据源时通常 RDB+AOF 或混合持久化"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Redis 重启后数据从哪来，最多会丢多少"},
+      {"id": "d2", "intent": "AOF 重写期间对内存和磁盘有什么影响"},
+      {"id": "d3", "intent": "你们 Redis 是纯缓存还是有必须持久的数据"}
+    ],
+    "pitfalls": [
+      "以为开了 AOF 就零丢失",
+      "把 Redis 当唯一数据库却只开 RDB"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-distributed-lock",
+    "name": "Redis 分布式锁",
+    "summary": "SET NX EX、持有者校验、看门狗续期，以及红锁的争议。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "加锁必须原子设置过期时间，避免死锁"},
+      {"id": "p2", "text": "解锁必须校验 value 是自己的，用 Lua 保证 get+del 原子"},
+      {"id": "p3", "text": "业务超时要续期；单 Redis 实例在故障切换时锁可能丢，强一致场景不够"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么不能先 SETNX 再 EXPIRE"},
+      {"id": "d2", "intent": "锁过期了业务还在跑，会出什么错，怎么续期"},
+      {"id": "d3", "intent": "你们用 Redisson 还是自己写，主从切换时能不能接受锁丢失"}
+    ],
+    "pitfalls": [
+      "del 不判断持有者，误删别人的锁",
+      "把 Redis 锁当成跨机房的强一致事务"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-tx-failure",
+    "name": "Spring 事务失效",
+    "summary": "自调用、非 public、异常被吃掉等常见失效原因。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "事务靠代理，同类 this.method() 不会进代理，注解不生效"},
+      {"id": "p2", "text": "默认只回滚 RuntimeException/Error，checked 异常要 rollbackFor"},
+      {"id": "p3", "text": "try-catch 把异常吃掉、方法非 public、传播行为选错都会让人以为没回滚"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "同一个类里方法 A 调带 @Transactional 的 B，为什么不回滚"},
+      {"id": "d2", "intent": "catch 了异常还想回滚应该怎么做"},
+      {"id": "d3", "intent": "你们怎么测事务真的生效，出过失效事故吗"}
+    ],
+    "pitfalls": [
+      "只在接口实现类上注解却从内部调用",
+      "多数据源时默认事务管理器绑错"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-circular-dependency",
+    "name": "循环依赖",
+    "summary": "单例 setter/字段注入能被三级缓存解开，构造器注入不行。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "三级缓存提前暴露半成品 Bean，解决单例的字段/setter 循环"},
+      {"id": "p2", "text": "构造器循环无法先创建实例，启动会失败"},
+      {"id": "p3", "text": "prototype 不帮你解循环；@Async 等代理过早暴露也有坑"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "A 依赖 B、B 依赖 A，Spring 是怎么先把对象拿出来的"},
+      {"id": "d2", "intent": "为什么换成构造器注入就挂"},
+      {"id": "d3", "intent": "你们会不会主动避免循环依赖，怎么拆"}
+    ],
+    "pitfalls": [
+      "认为任意注入方式都能解循环",
+      "用 @Lazy 掩盖设计问题却说不清原理"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-bean-lifecycle",
+    "name": "Bean 生命周期",
+    "summary": "实例化、属性填充、Aware、初始化回调、AOP 代理和销毁的顺序。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "先实例化再 populate，然后 Aware，再 @PostConstruct / InitializingBean / init-method"},
+      {"id": "p2", "text": "AOP 代理通常在初始化之后，所以构造器里看不到代理，也拿不到注入完成的依赖"},
+      {"id": "p3", "text": "销毁顺序相反：@PreDestroy、DisposableBean、destroy-method"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "@PostConstruct 和构造器里访问依赖有什么差别"},
+      {"id": "d2", "intent": "什么时候 Bean 已经是代理对象"},
+      {"id": "d3", "intent": "你们有没有在启动时做预热，放在生命周期哪一步"}
+    ],
+    "pitfalls": [
+      "在构造器里调用有事务的方法",
+      "把 BeanPostProcessor 和 init-method 顺序记反"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "http-idempotent-api",
+    "name": "接口幂等",
+    "summary": "超时重试下如何避免重复下单、重复扣款。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["http", "mysql"],
+    "key_points": [
+      {"id": "p1", "text": "网络超时客户端重试时，服务端可能已经成功，必须靠幂等键去重"},
+      {"id": "p2", "text": "唯一索引或幂等表比先查后插更可靠；状态机只允许合法跃迁"},
+      {"id": "p3", "text": "GET 天然幂等；POST 转支付/下单必须显式设计，Token 或业务单号都可以"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "用户连点两次或网关重试，你们怎么保证只扣一次"},
+      {"id": "d2", "intent": "幂等键放 header 还是 body，过期和冲突怎么处理"},
+      {"id": "d3", "intent": "下游也超时了，整条链路怎么继续保持幂等"}
+    ],
+    "pitfalls": [
+      "先 SELECT 再 INSERT 当幂等",
+      "只幂等入口，补偿任务又写了一次"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mq-at-least-once",
+    "name": "消息重复消费",
+    "summary": "至少一次投递下消费者必须幂等，失败重试和死信怎么处理。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mq"],
+    "key_points": [
+      {"id": "p1", "text": "常见 MQ 是 at-least-once，重复投递是正常现象不是故障"},
+      {"id": "p2", "text": "消费者用消息 ID 或业务唯一键去重，处理成功再 ack"},
+      {"id": "p3", "text": "失败要有限重试和死信，不能无限重试把下游打挂"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么不能做成 precisely once 就结束讨论"},
+      {"id": "d2", "intent": "你们去重表怎么设计，消息体变了还算不算同一条"},
+      {"id": "d3", "intent": "消费失败进死信之后谁来修，会不会丢业务"}
+    ],
+    "pitfalls": [
+      "业务失败也 ack，等于丢消息",
+      "用 Thread.sleep 重试堵在消费者线程里"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "distributed-rate-limit",
+    "name": "限流",
+    "summary": "单机与分布式限流的算法选择，以及被限流后对用户的行为。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "固定窗口会在窗口边界突刺；滑动窗口或令牌桶更平滑"},
+      {"id": "p2", "text": "多实例要用 Redis 等集中计数，本地限流挡不住总量"},
+      {"id": "p3", "text": "限流要区分按用户、按 IP、按接口；返回 429 并带重试建议"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "网关限流和应用内限流各挡什么"},
+      {"id": "d2", "intent": "Redis 计数失败时是放行还是拒绝，为什么"},
+      {"id": "d3", "intent": "你们怎么压测得出阈值，误伤正常用户怎么办"}
+    ],
+    "pitfalls": [
+      "只限单机 QPS，扩容后限额翻倍",
+      "限流后丢请求且没有明确错误码"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "timeout-retry-circuit-breaker",
+    "name": "超时、重试与熔断",
+    "summary": "超时必须设，重试要有预算和幂等，熔断保护自己也保护下游。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["http"],
+    "key_points": [
+      {"id": "p1", "text": "没有超时的调用会耗尽线程池；超时要小于上游等待时间"},
+      {"id": "p2", "text": "只对幂等和明确可重试的错误重试，次数和退避要有上限"},
+      {"id": "p3", "text": "熔断在错误率或慢调用超阈值后快速失败，半开探测再恢复"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "下游变慢时，你们线程池会先发生什么"},
+      {"id": "d2", "intent": "哪些异常能重试，支付回调能不能重试"},
+      {"id": "d3", "intent": "熔断打开后用户看到什么，何时自动恢复"}
+    ],
+    "pitfalls": [
+      "重试没有抖动，雪崩时一起打下游",
+      "超时设得比网关还长"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "distributed-tx-local-message",
+    "name": "本地消息表",
+    "summary": "本地事务写出消息表，异步投递实现对下游的最终一致。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mq", "mysql"],
+    "key_points": [
+      {"id": "p1", "text": "业务表和消息表同一本地事务提交，避免业务成了消息没发出"},
+      {"id": "p2", "text": "独立投递器扫描待发送记录，失败重试；下游必须幂等"},
+      {"id": "p3", "text": "这是最终一致，不是 TCC 那种同步两阶段；适合能接受短暂延迟的链路"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么不直接在事务里发 MQ"},
+      {"id": "d2", "intent": "投递器宕机期间消息积压，如何恢复且不重复伤害下游"},
+      {"id": "d3", "intent": "和你们现在的对账/补偿怎么配合"}
+    ],
+    "pitfalls": [
+      "事务提交后才 insert 消息表，等于没保证",
+      "没有对账，投递成功当业务成功"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "cap-consistency-choice",
+    "name": "一致性与可用性取舍",
+    "summary": "分区发生时选 C 还是 A，以及业务上用什么补偿让用户可接受。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["distributed"],
+    "key_points": [
+      {"id": "p1", "text": "分区时无法同时要强一致和持续可写，必须选一边再谈补偿"},
+      {"id": "p2", "text": "库存、资金常用强一致或保守扣减；Feed、计数可用最终一致"},
+      {"id": "p3", "text": "选择要落到超时、降级文案和对账，而不是只背 CAP 三个字母"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "你们系统里哪块必须强一致，哪块可以延迟"},
+      {"id": "d2", "intent": "下游超时是当失败还是当未知，用户侧怎么展示"},
+      {"id": "d3", "intent": "出现不一致后多久能修平，靠什么任务"}
+    ],
+    "pitfalls": [
+      "用 CAP 直接给具体架构打分，不谈故障模型",
+      "口头最终一致，但没有任何对账"
+    ],
+    "status": "published"
+  }
+]

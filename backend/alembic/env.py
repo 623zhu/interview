@@ -28,6 +28,7 @@ from app.models.user import User
 from app.models.resumes import Resume
 from app.models.interview_sessions import InterviewSession
 from app.models.topic_cards import TopicCard
+from app.models.interview_turn import InterviewTurn
 
 target_metadata = Base.metadata
 

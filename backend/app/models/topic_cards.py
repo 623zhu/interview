@@ -18,4 +18,4 @@ class TopicCard(TimestampMixin,Base):
     status:Mapped[str] = mapped_column(String(32), nullable=False)
     content_hash:Mapped[str] = mapped_column(String(64), nullable=False)
     
-    __table_args__= (UniqueConstraint(key, name="uq_topic_cards_key"),)
+    __table_args__= (UniqueConstraint("key", name="uq_topic_cards_key"),)

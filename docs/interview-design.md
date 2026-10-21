@@ -2,7 +2,7 @@
 
 本文件记录 AI 模拟面试的出题与追问设计。目标是让面试像真人一样根据简历和刚才的回答推进，而不是用一个 API 加一段提示词自由发挥，也不是每轮都从题库抽固定题目。
 
-简历处理、接口和表结构另见对应文档。本文件只约定面试官怎么工作。
+简历处理、接口和表结构另见 `docs/api.md`、`docs/database.md`。本文件只约定面试官怎么工作。
 
 ## 原则
 
@@ -10,71 +10,189 @@
 - 答得好就往深处挖，答不上就给台阶或换方向。一个考点问够了，再转到下一个。
 - 题库提供考点素材和评分依据，不直接把题目原文念给用户。
 - 「下一步问什么」由代码里的规则决定，模型只负责评估这一轮、以及把问题说得自然。
+- 一场面试的档案在 MySQL。LangGraph 只负责**一次 HTTP 请求内部**的节点编排和观测，不保存跨请求状态。
 
 ## 职责拆分
 
 | 部分 | 谁做 | 做什么 |
 | --- | --- | --- |
-| 计划 | 开场前一次模型调用 | 根据简历、岗位、难度列出本场考点、顺序和每段最多几轮 |
-| 评估 | 用户每答完一次模型调用 | 判断覆盖了哪些要点、深度如何、哪里含糊、是否明确说了「不会」 |
-| 流程控制 | Python 规则 | 决定追问、加深、给提示、换考点还是结束 |
+| 计划 | 开场前一次模型调用（`llm_model_heavy`） | 根据简历、岗位、难度和候选考点卡列出本场考点、顺序和每段最多几轮 |
+| 评估 | 用户每答完一次模型调用（`llm_model_light`） | 判断覆盖了哪些要点、深度如何、哪里含糊、是否明确说了「不会」 |
+| 流程控制 | Python 规则（图中的 `decide` 节点） | 决定追问、加深、给提示、换考点还是结束 |
 | 措辞 | 另一次模型调用 | 按规则指定的动作生成下一问，不评价对错，不说出答案 |
 | 题库 | 考点卡 | 提供要点、追问路线和常见误区；检索结果是素材，不是原题 |
+| 档案 | MySQL | `interview_sessions` 存计划和进度，`interview_turns` 存问答和评估 |
+| 编排与观测 | LangGraph + LangSmith | 一次请求跑完一张小图；节点入参、出参和耗时可回放 |
+
+## 编排：一次 HTTP 跑一张图
+
+不把整场面试做成一次长时间运行的图。用户每提交一次，FastAPI 从 MySQL 组装 State，`ainvoke` 一次，把结果写回 MySQL，图结束。不用 LangGraph checkpointer 当档案。LangSmith 的 `thread_id` 可以等于 `session_id`，只用来把同一场的多条 trace 串在一起看。
+
+图在进程启动时 `compile()` 一次，挂在 `app.state`，与 `llm_client` 相同。请求里不要重建图。节点内继续使用现有 `AsyncOpenAI` 客户端，不另起一套 ChatModel。
+
+建议两张小图：
+
+| HTTP | 图 | 节点 |
+| --- | --- | --- |
+| `POST /api/v1/interview-sessions` | `plan_graph` | `load_resume` → `pick_cards` → `generate_plan` → `ask` → `persist` |
+| `POST /api/v1/interview-sessions/{id}/turns` | `turn_graph` | `load_session` → `evaluate` → `decide` → `ask` 或 `report` → `persist` |
+
+`GET` 只读库，不跑图。
+
+```mermaid
+sequenceDiagram
+    participant C as 客户端
+    participant API as FastAPI
+    participant G as LangGraph
+    participant DB as MySQL
+
+    C->>API: POST /interview-sessions 或 /turns
+    API->>DB: 读简历或场次、轮次、当前卡
+    API->>G: ainvoke(state) 无 checkpointer
+    alt 创建会话
+        G->>G: pick_cards 后 generate_plan
+        G->>G: ask 第一问
+    else 提交回答
+        G->>G: evaluate
+        G->>G: decide
+        alt 未结束
+            G->>G: ask
+        else 结束
+            G->>G: report
+        end
+    end
+    G->>DB: persist
+    G-->>API: 当前问题或报告
+    API-->>C: 201 或 200
+```
+
+`turn_graph` 的条件边只看 `decide` 写出的 `action`：`end` 走 `report`，其余走 `ask`。`decide` 必须是普通函数节点，不要再交给模型选边。
+
+图在这一轮内部转完就停。不要在图里等待用户下一次回答。
+
+对的：`evaluate → decide → ask → persist → return`
+
+错的：`ask → 等用户 → evaluate → …`（图跨过多次 HTTP）
+
+`persist` 放在最后。失败则整轮不提交，避免评估写了、问题没写上。
+
+### 一轮的 State
+
+图的 State 是这一次调用的工作内存，不是档案。进图前从 `interview_sessions` 和 `interview_turns` 组装，出图后写回。
+
+```python
+class TurnState(TypedDict):
+    session_id: int
+    answer: str
+    resume_snapshot: dict
+    plan: dict
+    progress: dict
+    current_card: dict | None
+    recent_turns: list[dict]
+    evaluation: dict | None
+    action: str            # first / follow_up / deepen / hint / next_stage / end
+    question: str | None
+    report: dict | None
+```
+
+LangSmith 每次 `ainvoke` 带上 metadata，才能和库对上：`session_id`、`turn_seq`、`stage_kind`、`topic_card_key`。一轮一条 trace，下面分评估、决策、出题三个 span。整场进度仍看 `progress` 和各轮 `evaluation`。
 
 ## 流程
 
 ```mermaid
 flowchart TD
-    A[简历资料 + 岗位 + 难度] --> B[生成面试计划]
-    B --> C[按计划取当前考点]
-    C --> D[取考点卡]
-    D --> E[生成问题]
-    E --> F[用户回答]
-    F --> G[评估这一轮]
-    G --> H{流程控制}
-    H -->|没答透| E
-    H -->|这个点问完了| C
-    H -->|计划完成| I[生成报告]
+    A[简历资料 + 岗位 + 难度] --> B[plan_graph 生成计划并出第一问]
+    B --> C[用户回答]
+    C --> D[turn_graph 评估]
+    D --> E{decide}
+    E -->|follow_up / deepen / hint| F[出下一问]
+    E -->|next_stage| G[取下一阶段]
+    G --> F
+    E -->|end| H[生成报告]
+    F --> C
 ```
 
 ### 1. 开场前生成计划
 
-用简历结构化资料、岗位和难度，让模型产出一份结构化计划，存进这场面试。用户看不到这份计划。计划决定本场问什么、问多久，所以每场不会一模一样。
+创建会话时先按标签过滤考点卡，再把候选卡交给 `llm_model_heavy` 做选择和排序。不要把全部卡片塞进 prompt。用户看不到这份计划。
 
-示例结构：
+过滤（第一版不上向量库）：
 
-- 开场：自我介绍，1 轮。
-- 项目深挖：简历里的具体项目，考察其中的设计点，最多若干轮。
-- 技术基础：与岗位相关的考点，各 2 到 3 轮。
-- 场景题：结合岗位的一道设计题，若干轮。
-- 收尾：候选人反问，1 轮。
+1. `status = published`
+2. `role_tags` 与岗位标签有交集（例如「Java 后端」→ `backend`、`java`）
+3. `skill_tags` 与简历 `skills` 归一化后有交集；场景卡可以只按岗位
+4. `difficulty` 不超过本场：`easy` 只用 easy，`medium` 用 easy+medium，`hard` 全开
+5. 随机打乱后最多送 8～12 张给模型
+
+本场骨架由代码固定，模型只填中间阶段：
+
+| 顺序 | kind | source | max_turns | 谁定内容 |
+| --- | --- | --- | --- | --- |
+| 1 | `intro` | resume | 1 | 代码写死 |
+| 2 | `project_probe` | resume | 3～5 | 模型从 `profile.projects` 里挑 1 个 |
+| 3～4 | `fundamentals` | bank | 各 2～3 | 模型从候选卡里挑 2 张 |
+| 5 | `scenario` | bank | 3～4 | 模型再挑 1 张偏场景的卡 |
+| 6 | `closing` | resume | 1 | 代码写死 |
+
+阶段结构：
+
+```python
+class InterviewStage(BaseModel):
+    id: str
+    kind: Literal["intro", "project_probe", "fundamentals", "scenario", "closing"]
+    goal: str
+    max_turns: int = Field(ge=1, le=8)
+    source: Literal["resume", "bank"] = "resume"
+    resume_anchor: str | None = None      # 项目名或技能原文
+    topic_card_key: str | None = None     # 引用卡片 key，不引用自增 id
+```
+
+计划存进 `interview_sessions.plan`。进度：
+
+```json
+{
+  "stage_index": 0,
+  "turn_in_stage": 1,
+  "consecutive_misses": 0,
+  "used_card_keys": ["mysql-index-leftmost"]
+}
+```
 
 ### 2. 每轮先评估，再决定下一步
 
-用户答完后，先单独调用一次模型，只做评估、不出题。输出固定结构：
+用户答完后，`evaluate` 只对照当前阶段：bank 用卡片 `key_points.id`，项目深挖用该项目 highlights。这一步不出题。
 
-- 覆盖了当前考点的哪些要点，漏了哪些。
-- 深度打分。
-- 含糊、可疑或答非所问的地方，并摘出原话。
-- 用户是否明确说了「不会」。
+```python
+class TurnEvaluation(BaseModel):
+    covered: list[str]
+    missing: list[str]
+    depth: Literal["shallow", "adequate", "deep"]
+    vague_quotes: list[str]
+    said_dont_know: bool
+    off_topic: bool
+```
 
-然后由 Python 规则决定下一步，不把决定权交给模型：
+`decide_next_action` 是纯函数，输入评估结果、`progress`、当前 `stage`，输出一个动作。输入相同则输出相同，用单测覆盖性格，不必为了测规则去跑整张图。
 
-| 情况 | 下一步 |
+| 情况 | 动作 |
 | --- | --- |
-| 答得浅，但有可以继续挖的点 | 追问那个含糊的点 |
-| 答得好 | 加深一层，例如从「怎么用」追到「为什么这样设计」 |
-| 连续两次答不上 | 给一个提示，或降一级难度 |
-| 这个点已经追问足够多次 | 转到下一个考点 |
-| 当前阶段轮数用完 | 进入下一阶段 |
+| `intro` / `closing` 已答完 | `next_stage` / `end` |
+| `turn_in_stage >= max_turns` | `next_stage`，最后一阶段则 `end` |
+| `said_dont_know`、`off_topic` 或 `shallow` | `consecutive_misses += 1` |
+| `consecutive_misses >= 2` | 先 `hint`；已经 hint 过则 `next_stage` |
+| 有 `vague_quotes` 或 `missing` | `follow_up` |
+| `depth=deep` 且 `probe_path` 还有下一层 | `deepen` |
+| 要点基本覆盖且不能再挖 | `next_stage` |
 
-这张规则表就是面试官的性格。写在代码里，可以测试，也可以按难度调整。
+动作取值：`first` / `follow_up` / `deepen` / `hint` / `next_stage` / `end`。
+
+动态发生在评估抽出来的原话、以及出题时追哪一句；还能否追、该不该换阶段，由计划和这张表锁死。
 
 ### 3. 出题时模型只负责说话
 
-最后一次模型调用只生成问题。输入包括：当前考点、这次动作（新问、追问、提示）、最近几轮对话、相关考点卡、简历片段。
+`ask` 节点只生成问题。输入包括：当前考点、这次动作、最近 2～3 轮、相关考点卡或简历锚点、`probe_path` 里对应深度。
 
-问题素材有三个来源，计划里可以控制比例：
+问题素材有三个来源：
 
 | 来源 | 典型问法 | 说明 |
 | --- | --- | --- |
@@ -92,33 +210,41 @@ flowchart TD
 
 题库存考点卡，不存「题目 + 标准答案」。一张卡包含：
 
-- 考点名称、岗位标签、难度。
-- 核心要点，作为评估和报告的依据。
-- 追问路线，例如：是什么 → 为什么 → 什么时候会出问题 → 你的项目里怎么排查。
-- 常见误区。
+- `key`、名称、岗位标签、技能标签、难度。
+- `summary`，给计划生成看，不进用户问题。
+- `key_points`（`id` + `text`），作为评估和报告的依据。
+- `probe_path`（`id` + `intent`），追问意图，不是题面。
+- `pitfalls`，常见误区。
 
-同一张卡可以从追问路线的不同位置切入，也可以和不同项目结合起来问。评估那一步直接使用卡上的核心要点，报告就有来源，不是模型凭空打分。
+同一张卡可以从追问路线的不同位置切入，也可以和不同项目结合起来问。评估直接使用卡上的核心要点，报告就有来源。
 
 检索约束：
 
 - 同一场已经问过的卡不再选。
-- 该用户最近几场问过的卡降低权重。
+- 该用户最近几场问过的卡降低权重（后做）。
 - 从符合条件的若干张里挑选，而不是每次都取最相似的一张。
 
-题库规模较小时，按「岗位 + 技能标签 + 难度」过滤即可。等题库变大，或需要把简历里自由写的技能名称匹配到卡片时，再加向量检索。题库内容可以先由模型批量生成，再人工筛选；卡片质量决定评分准不准。
+当前 24 张 Java 后端卡按标签过滤即可。需要把简历里自由写的技能名称匹配到卡片时，再加向量检索。种子在 `backend/data/topic_cards.json`，导入脚本按 `key` upsert，并用正文 SHA-256 写入 `content_hash`，供以后判断是否重新 embedding。
 
 ## 数据
 
-面试场次上保存计划和当前进度。每条用户回答上保存这一轮的评估结果。报告阶段汇总这些评估，不必再把整段对话交给模型重新判断。
+- `interview_sessions`：谁在面、哪份简历、岗位、难度、简历快照、计划、进度、状态。开场前就要落库，与是否使用 LangGraph 无关。
+- `interview_turns`：每一轮的动作、问题、回答、评估。`answer` 为空表示正在等用户。
+- 报告阶段汇总各轮评估，不必再把整段对话交给模型重新判断。
+- 用户接口不返回 `plan` 和各轮 `evaluation`；评估只进报告。
+
+状态：`planned` / `in_progress` / `completed` / `abandoned`。创建成功并给出第一问后即为 `in_progress`。
 
 ## 代价
 
-每轮至少两次模型调用：一次评估，一次出题。可以用更小的模型做评估，出题用流式输出，或在评估返回前先显示一句承接语。
+每轮至少两次模型调用：一次评估，一次出题。计划生成额外一次 heavy 模型。可以用更小的模型做评估，出题用流式输出，或在评估返回前先显示一句承接语。
 
 ## 开发顺序
 
-1. 先做计划、每轮评估和流程控制。问题素材只来自简历。这一步用来验证追问是否自然。
-2. 再加考点卡题库，先用标签过滤。
-3. 最后加向量检索、跨场次去重和面试官风格。
+1. 补 `interview_turns` 表，修正会话 schema（`created_at`、阶段 `source=bank`、`topic_card_key`）。
+2. 实现 `plan_graph` 与 `POST /api/v1/interview-sessions`：选卡、生成计划、出第一问。
+3. 实现 `turn_graph` 与 `POST /api/v1/interview-sessions/{id}/turns`：评估、`decide`、下一问。先打通 `intro → project_probe → fundamentals`。
+4. `closing` 和报告。
+5. LangSmith 观测、跨场次去重、向量检索。
 
-第一步是骨架。题库是在骨架上补素材。顺序反过来，容易做成只会照着题库念题的系统。
+考点卡已经入库，计划和基础/场景阶段从第一版就可以引用卡片。不要做成抽卡念题。
