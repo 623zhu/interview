@@ -1,36 +1,82 @@
+from fastapi import APIRouter, HTTPException, Request, status
+
+from app.api.deps import CurrentUser
+from app.graphs.turn_graph import (
+    SessionConflictError,
+    SessionNotFoundError,
+    TurnPipelineError,
+)
+from app.schemas.interview_sessions import (
+    InterviewSessionCreateRequest,
+    InterviewSessionCreateResponse,
+    InterviewTurnSubmitRequest,
+    InterviewTurnSubmitResponse,
+)
+from app.service.interview_session import (
+    PlanGenerationError,
+    ResumeNotFoundError,
+    ResumeNotReadyError,
+    create_interview_session_service,
+)
+from app.service.interview_turn import submit_turn_service
+
+router = APIRouter(prefix="/api/v1/interview-sessions", tags=["interview-sessions"])
 
 
-MAX_CHADIDATE_CARDS =12
-PLAN_RETRY = 1
-INTRO_QUESTION = "先做个简短自我介绍吧，可以结合你最近的项目。"
-DIFFICULTY_RANK = {"easy": 0, "medium": 1, "hard": 2}
-SCENARIO_SKILL_TAGS = {"MySql", "http", "distributed"}
+@router.post("", status_code=status.HTTP_201_CREATED, summary="创建面试场次")
+async def create_interview_session(
+    body: InterviewSessionCreateRequest,
+    current_user: CurrentUser,
+    request: Request,
+) -> InterviewSessionCreateResponse:
+    async with request.app.state.mysql_session_factory() as db:
+        try:
+            return await create_interview_session_service(
+                user_id=current_user.id,
+                resume_id=body.resume_id,
+                target_role=body.target_role,
+                difficulty=body.difficulty,
+                db=db,
+                llm_client=request.app.state.llm_client,
+            )
+        except ResumeNotFoundError:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="简历不存在")
+        except ResumeNotReadyError:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="简历未就绪")
+        except PlanGenerationError:
+            raise HTTPException(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="生成面试计划失败",
+            )
 
-GENERATE_PLAN_PROMPT = """
-你是模拟面试的出题策划。根据候选人简历快照和候选考点卡，为本场面试填写中间阶段。
-只返回 JSON,不要 Markdown。
-只能使用提供的项目名、经历和卡片 key,不要编造简历里没有的经历,不要使用未提供的卡片。
-JSON 形状：
-{
-  "project_probe": {
-    "goal": "本阶段考察目标",
-    "max_turns": 4,
-    "resume_anchor": "项目名或公司名，没有可用锚点时为 null"
-  },
-  "fundamentals": [
-    {"goal": "考察目标", "max_turns": 3, "topic_card_key": "候选卡 key"},
-    {"goal": "考察目标", "max_turns": 2, "topic_card_key": "另一个候选卡 key"}
-  ],
-  "scenario": {
-    "goal": "考察目标",
-    "max_turns": 3,
-    "topic_card_key": "候选卡 key",
-    "resume_anchor": "能联系上的项目名，没有则为 null"
-  }
-}
-约束：
-- fundamentals 必须恰好 2 条,key 互不相同，且都在候选卡里。
-- scenario 的 key 在候选卡里，且不能与 fundamentals 重复。
-- project_probe.max_turns 取 3-5;fundamentals 取 2-3;scenario 取 3-4。
-- resume_anchor 必须是 allowed_anchors 中的一项，或为 null。
-"""
+
+@router.post(
+    "/{session_id}/turns",
+    status_code=status.HTTP_200_OK,
+    summary="提交本轮回答",
+)
+async def submit_interview_turn(
+    session_id: int,
+    body: InterviewTurnSubmitRequest,
+    current_user: CurrentUser,
+    request: Request,
+) -> InterviewTurnSubmitResponse:
+    async with request.app.state.mysql_session_factory() as db:
+        try:
+            return await submit_turn_service(
+                user_id=current_user.id,
+                session_id=session_id,
+                answer=body.answer,
+                db=db,
+                llm_client=request.app.state.llm_client,
+                turn_graph=request.app.state.turn_graph,
+            )
+        except SessionNotFoundError:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="面试场次不存在")
+        except SessionConflictError:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="当前场次无法作答")
+        except TurnPipelineError:
+            raise HTTPException(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="处理本轮回答失败",
+            )

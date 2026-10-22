@@ -44,9 +44,37 @@ class InterviewStage(BaseModel):
 class InterviewPlan(BaseModel):
     stages:list[InterviewStage]= Field(min_length=1)
 
+
 class InterviewProgress(BaseModel):
     stage_index: int = Field(ge=0)
     turn_in_stage: int = Field(ge=1)
-    consecutive_misses: int = Field(ge=0, default=0)
-    used_card_keys: list[str] = Field(default_factory=list)
+    consecutive_misses: int = Field(ge=0, default=0) # 用户回答不好的次数
+    used_card_keys: list[str] = Field(default_factory=list) # 用户已经使用过的卡片 key
 
+
+
+class TurnEvaluation(BaseModel):
+    covered: list[str]
+    missing: list[str]
+    depth: Literal["shallow", "adequate", "deep"]
+    vague_quotes: list[str]         # 用户回答中的含糊原话
+    said_dont_know: bool
+    off_topic: bool                     # 用户回答是否偏离主题
+
+
+class InterviewTurnSubmitRequest(BaseModel):
+    answer: str = Field(min_length=1, max_length=8000)
+
+
+# 汇总
+class InterviewReport(BaseModel):
+    covered: list[str]
+    missing: list[str]
+    said_dont_know_count: int = 0
+
+
+class InterviewTurnSubmitResponse(BaseModel):
+    id: int
+    status: SessionStatus
+    current_turn: CurrentTurn | None
+    report: InterviewReport | None = None

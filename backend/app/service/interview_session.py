@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.interview_sessions import InterviewSession
-from app.models.interview_turn import InterviewTurn
+from app.models.interview_turn import InterviewTurn   
 from app.models.resumes import Resume
 from app.models.topic_cards import TopicCard
 from app.schemas.interview_sessions import (
@@ -32,8 +32,8 @@ SCENARIO_SKILL_TAGS = {"mq", "http", "distributed"}
 
 GENERATE_PLAN_PROMPT = """
 你是模拟面试的出题策划。根据候选人简历快照和候选考点卡，为本场面试填写中间阶段。
-只返回 JSON，不要 markdown。
-只能使用提供的项目名、经历和卡片 key，不要编造简历里没有的经历，不要使用未提供的卡片。
+只返回 JSON,不要 markdown。
+只能使用提供的项目名、经历和卡片 key,不要编造简历里没有的经历,不要使用未提供的卡片。
 
 JSON 形状：
 {
@@ -55,9 +55,9 @@ JSON 形状：
 }
 
 约束：
-- fundamentals 必须恰好 2 条，key 互不相同，且都在候选卡里。
+- fundamentals 必须恰好 2 条,key 互不相同，且都在候选卡里。
 - scenario 的 key 在候选卡里，且不能与 fundamentals 重复。
-- project_probe.max_turns 取 3～5；fundamentals 取 2～3；scenario 取 3～4。
+- project_probe.max_turns 取 3-5;fundamentals 取 2-3;scenario 取 3-4。
 - resume_anchor 必须是 allowed_anchors 中的一项，或为 null。
 """
 
@@ -92,7 +92,7 @@ class _GeneratedMiddlePlan(BaseModel):
     fundamentals: list[_PlanBankStage] = Field(min_length=2, max_length=2)
     scenario: _PlanBankStage
 
-
+# 小写化以及去空格化
 def _normalize_tag(value: str) -> str:
     return "".join(value.lower().split())
 
@@ -109,6 +109,7 @@ def role_tags_for(target_role: str) -> list[str]:
     return sorted(tags)
 
 
+# 把题库标签归一化，比如把 springboot 归一化为 spring,把 rabbitmq 归一化为 mq。
 def normalize_skills(skills: list[str]) -> set[str]:
     aliases = {
         "springboot": "spring",
@@ -138,16 +139,16 @@ def normalize_skills(skills: list[str]) -> set[str]:
             result.add("java")
     return result
 
-
+# 根据难度等级，返回允许的难度等级集合
 def _allowed_difficulties(difficulty: Difficulty) -> set[str]:
     cap = DIFFICULTY_RANK[difficulty]
     return {name for name, rank in DIFFICULTY_RANK.items() if rank <= cap}
 
-
+# 判断是否是场景题
 def _is_scenario_card(card: TopicCard) -> bool:
     return bool(set(card.skill_tags or []) & SCENARIO_SKILL_TAGS)
 
-
+# 判断卡片是否匹配
 def _card_matches(
     card: TopicCard,
     role_tags: list[str],
@@ -162,7 +163,7 @@ def _card_matches(
         return True
     return bool(set(card.skill_tags or []) & resume_skills)
 
-
+# 获取简历中的项目名和公司名
 def _anchors(profile: ResumeProfile) -> list[str]:
     projects = [item.name.strip() for item in profile.projects if item.name and item.name.strip()]
     if projects:
@@ -176,7 +177,7 @@ def _anchors(profile: ResumeProfile) -> list[str]:
         return companies
     return [skill.strip() for skill in profile.skills if skill.strip()][:3]
 
-
+# 将卡片信息转换为 JSON 格式
 def _candidate_payload(cards: list[TopicCard]) -> list[dict[str, Any]]:
     return [
         {
@@ -189,7 +190,7 @@ def _candidate_payload(cards: list[TopicCard]) -> list[dict[str, Any]]:
         for card in cards
     ]
 
-
+# 加载简历
 async def load_resume(
     db: AsyncSession,
     user_id: int,
@@ -205,7 +206,7 @@ async def load_resume(
         raise ResumeNotReadyError()
     return resume, ResumeProfile.model_validate(resume.profile)
 
-
+# 从题库中选择卡片
 async def pick_cards(
     db: AsyncSession,
     role_tags: list[str],
@@ -223,7 +224,7 @@ async def pick_cards(
     random.shuffle(matched)
     return matched[:MAX_CANDIDATE_CARDS]
 
-
+# 构建面试计划
 def _build_plan(
     middle: _GeneratedMiddlePlan,
     candidate_keys: set[str],
@@ -300,7 +301,7 @@ def _build_plan(
         ]
     )
 
-
+# 生成面试计划
 async def generate_plan(
     llm_client: AsyncOpenAI,
     profile: ResumeProfile,
@@ -343,11 +344,11 @@ async def generate_plan(
             last_error = exc
     raise PlanGenerationError(str(last_error) if last_error else "plan generation failed")
 
-
+# 生成第一个问题
 def ask_first_question() -> str:
     return INTRO_QUESTION
 
-
+# 持久化面试会话
 async def persist_session(
     db: AsyncSession,
     user_id: int,
@@ -395,7 +396,7 @@ async def persist_session(
         id=session_row.id,
         resume_id=session_row.resume_id,
         target_role=session_row.target_role,
-        difficulty=session_row.difficulty,
+        difficulty=difficulty,
         status=session_row.status,
         created_at=session_row.created_at,
         current_turn=CurrentTurn(seq=1, action="first", question=question),
@@ -403,7 +404,7 @@ async def persist_session(
     await db.commit()
     return response
 
-
+# 创建面试会话
 async def create_interview_session_service(
     user_id: int,
     resume_id: int,
