@@ -513,6 +513,13 @@ async def get_interview_session_service(
         if turn.answer != ""
     ]
     plan = InterviewPlan.model_validate(session_row.plan)
+    report = None
+    if completed:
+        report = _load_stored_report(session_row.report)
+        if report is None:
+            report = _session_report(plan, turns)
+            session_row.report = report.model_dump()
+            await db.commit()
     return InterviewSessionGetResponse(
         id=session_row.id,
         resume_id=session_row.resume_id,
@@ -522,7 +529,7 @@ async def get_interview_session_service(
         created_at=session_row.created_at,
         turns=answered,
         current_question=pending.question if in_progress and pending else None,
-        report=_session_report(plan, turns) if completed else None,
+        report=report,
     )
 
 
@@ -532,13 +539,18 @@ def _naive_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc).replace(tzinfo=None)
 
 
-def _score_from_report(raw: dict | None) -> int | None:
+def _load_stored_report(raw: dict | None) -> InterviewReport | None:
     if not raw:
         return None
     try:
-        return InterviewReport.model_validate(raw).score
+        return InterviewReport.model_validate(raw)
     except Exception:
         return None
+
+
+def _score_from_report(raw: dict | None) -> int | None:
+    report = _load_stored_report(raw)
+    return report.score if report else None
 
 
 async def list_interview_sessions_service(

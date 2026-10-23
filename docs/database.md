@@ -102,7 +102,7 @@
 | `resume_snapshot` | `JSON` | 是 | 无 | 开场时的 `ResumeProfile` 拷贝，后续改简历不影响本场 |  |
 | `plan` | `JSON` | 是 | 无 | `InterviewPlan`，用户接口不返回 |  |
 | `progress` | `JSON` | 是 | 无 | 当前阶段和下标，见下方 |  |
-| `report` | `JSON` | 否 | 空 | 结束报告。`NULL` 表示尚未结束，或结束时尚未写入。形状见下方 |  |
+| `report` | `JSON` | 否 | 空 | 结束报告。`NULL` 表示尚未正常结束。`completed` 时由 `persist` 写入；旧数据在 GET 详情时补写 |  |
 | `created_at` | `DATETIME(6)` | 是 | 无 | 创建时间，由应用写入 UTC |  |
 | `updated_at` | `DATETIME(6)` | 是 | 无 | 更新时间，由应用写入 UTC |  |
 
@@ -129,7 +129,7 @@
 }
 ```
 
-`report`（结束后写入，当前业务代码尚未写入）：
+`report`（`status=completed` 时写入）：
 
 ```json
 {

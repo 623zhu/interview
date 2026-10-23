@@ -308,7 +308,7 @@ Authorization: Bearer <access_token>
 ]
 ```
 
-`score` 来自场次上已写入的 `report.score`；尚未写入则为 `null`。`current_question` 仅 `in_progress` 有值。`status` 取值不合法返回 `422`。
+`score` 来自场次上已写入的 `report.score`。尚未结束、已放弃、或旧数据尚未补写时为 `null`。打开详情 GET 会给旧的已完成场次补写 `report`。`current_question` 仅 `in_progress` 有值。`status` 取值不合法返回 `422`。
 
 ## 查询面试场次
 
@@ -374,7 +374,7 @@ Authorization: Bearer <access_token>
 }
 ```
 
-`current_question` 为当前等待回答的问题；`completed` 或 `abandoned` 时为 `null`。`report` 仅在 `status=completed` 时有值。放弃的场次保留已答轮次，不带点评和报告。场次不存在或不属于当前用户返回 `404`。
+`current_question` 为当前等待回答的问题；`completed` 或 `abandoned` 时为 `null`。`report` 仅在 `status=completed` 时有值，优先读场次列；没有则按各轮评估现算并补写。放弃的场次保留已答轮次，不带点评和报告。场次不存在或不属于当前用户返回 `404`。
 
 ## 放弃面试场次
 
@@ -436,7 +436,7 @@ Authorization: Bearer <access_token>
 }
 ```
 
-最后一轮完成后 `status` 为 `completed`，`current_turn` 为 `null`，`report` 为各轮评估汇总。本轮点评仍不出现在这次响应里，结束后用 GET 查看：
+最后一轮完成后 `status` 为 `completed`，`current_turn` 为 `null`，`report` 为各轮评估汇总，并写入 `interview_sessions.report`。本轮点评仍不出现在这次响应里，结束后用 GET 查看：
 
 ```json
 {

@@ -236,9 +236,9 @@ class TurnEvaluation(BaseModel):
 
 ## 数据
 
-- `interview_sessions`：谁在面、哪份简历、岗位、难度、简历快照、计划、进度、状态。开场前就要落库，与是否使用 LangGraph 无关。
+- `interview_sessions`：谁在面、哪份简历、岗位、难度、简历快照、计划、进度、状态。正常结束时写入 `report`。开场前就要落库，与是否使用 LangGraph 无关。
 - `interview_turns`：每一轮的动作、问题、回答、评估。`answer` 为空字符串表示正在等用户（列为 `NOT NULL`）。
-- 报告阶段汇总各轮评估并按阶段加权出总分，不必再把整段对话交给模型重新判断。
+- 报告由各轮评估按阶段加权汇总，写入场次，不必再把整段对话交给模型重新判断。
 - 用户接口不返回 `plan` 和各轮完整 `evaluation`。结束后的 GET 只公开闸后的 `score` 与 `comment`。
 
 状态：`planned` / `in_progress` / `completed` / `abandoned`。创建成功并给出第一问后即为 `in_progress`。中途退出把状态改为 `abandoned`，不写 `report`；只有正常走完 `closing` 才是 `completed`。
@@ -252,7 +252,7 @@ class TurnEvaluation(BaseModel):
 1. 已完成：`interview_turns` 表，会话 schema（`created_at`、阶段 `source=bank`、`topic_card_key`）。
 2. 已完成：`POST /api/v1/interview-sessions` 选卡、生成计划、出第一问。尚未包成 `plan_graph`。
 3. 已完成：`turn_graph` 与 `POST /api/v1/interview-sessions/{id}/turns`。`intro` 答完即换到 `project_probe`。
-4. 已完成：`closing` 用模板收尾；每轮模型给分和点评，代码做闸，结束按阶段加权。`GET /api/v1/interview-sessions/{id}` 只读库，结束后返回点评、分数和报告。
+4. 已完成：`closing` 用模板收尾；每轮模型给分和点评，代码做闸，结束按阶段加权并写入 `interview_sessions.report`。`GET /api/v1/interview-sessions/{id}` 只读库，结束后返回点评、分数和报告。
 5. LangSmith 观测、跨场次去重、向量检索。把创建场次也收成 `plan_graph`。
 
 考点卡已经入库，计划和基础/场景阶段从第一版就可以引用卡片。不要做成抽卡念题。

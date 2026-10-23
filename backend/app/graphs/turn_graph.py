@@ -402,6 +402,7 @@ async def persist(state: TurnState, config: RunnableConfig) -> dict[str, Any]:
 
     if state.get("action") == "end":
         session_row.status = "completed"
+        session_row.report = state.get("report")
         await db.commit()
         return {}
 

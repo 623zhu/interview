@@ -19,18 +19,18 @@
 - 新增考点卡表和 24 张 Java 后端种子卡，供计划生成和评估使用。
 - 新增面试场次表和轮次表。登录后可创建面试、提交回答。
 - 提交回答时一次 HTTP 跑完一张 `turn_graph`：评估、规则决定下一步、出下一问或报告。档案仍以 MySQL 为准，不用 LangGraph checkpointer。
-- `interview_sessions` 增加可空 `report` 列，供结束后存放总分和阶段分。当前迁移已写，业务尚未写入该列。
-- 登录后可 `GET /api/v1/interview-sessions` 查看自己的场次列表，支持按状态和创建时间过滤。结束后的总分仅在 `report` 已写入时返回。
+- `interview_sessions` 增加可空 `report` 列，供结束后存放总分和阶段分。
+- 登录后可 `GET /api/v1/interview-sessions` 查看自己的场次列表，支持按状态和创建时间过滤。结束后的总分来自已写入的 `report.score`。
 - 进行中的场次可用 `PATCH /api/v1/interview-sessions/{id}` 标为 `abandoned` 中途结束。不生成报告，之后不能再作答。
 
 ### Changed
 
 - 接口成功时直接返回资源，不再使用 `code`、`message`、`data` 外壳。
-- 每轮评估增加模型给出的分数和点评。代码按深度、跑题、「不会」钳制分数后写入；结束时按项目深挖、基础、场景加权得到总分。进行中不返回点评；结束后 `GET /api/v1/interview-sessions/{id}` 返回各轮分数、点评和报告。
+- 每轮评估增加模型给出的分数和点评。代码按深度、跑题、「不会」钳制分数后写入；结束时按项目深挖、基础、场景加权得到总分，并写入 `interview_sessions.report`。进行中不返回点评；结束后 `GET /api/v1/interview-sessions/{id}` 优先读该列，旧场次现算后补写。
 
 ### Database / Deployment Notes
 
-- 数据库迁移：在 `backend/` 执行 `alembic upgrade head`。顺序为 `cc267a266b69`（`users`）、`54098f4c206e`（`resumes`）、`3f212b686956`（`interview_sessions`）、`a41683e0a265`（`topic_cards`）、`1ce649d360ab`（`interview_turns`）、`c4f8a21b9d07`（`interview_sessions.report`）。当前 head 为 `c4f8a21b9d07`。`c4f8a21b9d07` 给场次表增加可空 JSON 列 `report`，进行中为 `NULL`；业务写入尚未接上。
+- 数据库迁移：在 `backend/` 执行 `alembic upgrade head`。顺序为 `cc267a266b69`（`users`）、`54098f4c206e`（`resumes`）、`3f212b686956`（`interview_sessions`）、`a41683e0a265`（`topic_cards`）、`1ce649d360ab`（`interview_turns`）、`c4f8a21b9d07`（`interview_sessions.report`）。当前 head 为 `c4f8a21b9d07`。`c4f8a21b9d07` 给场次表增加可空 JSON 列 `report`，进行中为 `NULL`，正常结束时写入。
 - 种子数据：迁移完成后在 `backend/` 执行 `python scripts/import_topic_cards.py`，按 `key` upsert 24 张考点卡。
 - 依赖：`backend/requirements.txt` 增加 `langgraph>=0.2.45`。进程启动时 `compile()` `turn_graph`，挂到 `app.state`。
 - 回滚：`alembic downgrade -1` 会删除当前 head 对应的表及其数据。
