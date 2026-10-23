@@ -23,6 +23,7 @@
 ### Changed
 
 - 接口成功时直接返回资源，不再使用 `code`、`message`、`data` 外壳。
+- 每轮评估增加模型给出的分数和点评。代码按深度、跑题、「不会」钳制分数后写入；结束时按项目深挖、基础、场景加权得到总分。进行中不返回点评；结束后 `GET /api/v1/interview-sessions/{id}` 返回各轮分数、点评和报告。
 
 ### Database / Deployment Notes
 

@@ -18,12 +18,12 @@ from app.models.topic_cards import TopicCard
 from app.schemas.interviews import (
     InterviewPlan,
     InterviewProgress,
-    InterviewReport,
     InterviewStage,
     TurnEvaluation,
 )
 from app.schemas.resumes import ProjectItem, ResumeProfile
 from app.service.interview_decide import decide_next_action
+from app.service.interview_score import build_interview_report, gate_evaluation
 
 EVALUATE_RETRY = 1
 ASK_RETRY = 1
@@ -37,9 +37,19 @@ EVALUATE_PROMPT = """
   "depth": "shallow | adequate | deep",
   "vague_quotes": ["从回答里摘的含糊原话"],
   "said_dont_know": false,
-  "off_topic": false
+  "off_topic": false,
+  "score": 0,
+  "comment": "本轮 0 分。一到两句扣分或得分理由。"
 }
 covered/missing 只能使用提供的要点 id。depth 只能是 shallow/adequate/deep。
+score 是 0-100 的整数，必须和 depth、覆盖情况同向：
+- shallow：0-50
+- adequate：40-85
+- deep：70-100
+- said_dont_know 为 true 时不超过 30
+- off_topic 为 true 时不超过 40
+comment 必须以「本轮 {score} 分。」开头，接着写一两句理由，只解释本轮，不泄露标准答案。
+comment 里的分数必须等于 score。
 """
 
 ASK_PROMPT = """
@@ -119,13 +129,22 @@ def _rubric(
 # 开场和收尾的评估
 def _stub_evaluation(stage: InterviewStage) -> TurnEvaluation:
     point_id = "intro" if stage.kind == "intro" else "closing"
-    return TurnEvaluation(
-        covered=[point_id],
-        missing=[],
-        depth="adequate",
-        vague_quotes=[],
-        said_dont_know=False,
-        off_topic=False,
+    comment = (
+        "完成了开场自我介绍。"
+        if stage.kind == "intro"
+        else "完成了收尾。"
+    )
+    return gate_evaluation(
+        TurnEvaluation(
+            covered=[point_id],
+            missing=[],
+            depth="adequate",
+            vague_quotes=[],
+            said_dont_know=False,
+            off_topic=False,
+            score=75,
+            comment=comment,
+        )
     )
 
 
@@ -233,7 +252,7 @@ async def evaluate(state: TurnState, config: RunnableConfig) -> dict[str, Any]:
             raw = completion.choices[0].message.content
             if not raw:
                 raise TurnPipelineError("empty evaluation")
-            evaluation = TurnEvaluation.model_validate_json(raw)
+            evaluation = gate_evaluation(TurnEvaluation.model_validate_json(raw))
             return {"evaluation": evaluation.model_dump()}
         except Exception as exc:
             last_error = exc
@@ -267,27 +286,17 @@ def route_after_decide(state: TurnState) -> str:
 
 # 综合各轮评估为报告。
 def report(state: TurnState) -> dict[str, Any]:
-    covered: list[str] = []
-    missing: list[str] = []
-    dont_know = 0
-    evaluations = [
-        item.get("evaluation")
-        for item in state.get("recent_turns") or []
-        if item.get("evaluation")
-    ]
+    plan = InterviewPlan.model_validate(state["plan"])
+    progress = InterviewProgress.model_validate(state["progress"])
+    items: list[tuple[int, TurnEvaluation]] = []
+    for item in state.get("recent_turns") or []:
+        raw = item.get("evaluation")
+        if not raw:
+            continue
+        items.append((int(item["stage_index"]), TurnEvaluation.model_validate(raw)))
     if state.get("evaluation"):
-        evaluations.append(state["evaluation"])
-    for raw in evaluations:
-        item = TurnEvaluation.model_validate(raw)
-        covered.extend(item.covered)
-        missing.extend(item.missing)
-        if item.said_dont_know:
-            dont_know += 1
-    built = InterviewReport(
-        covered=sorted(set(covered)),
-        missing=sorted(set(missing)),
-        said_dont_know_count=dont_know,
-    )
+        items.append((progress.stage_index, TurnEvaluation.model_validate(state["evaluation"])))
+    built = build_interview_report(plan=plan, items=items)
     return {"report": built.model_dump(), "question": None}
 
 

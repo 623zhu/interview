@@ -61,6 +61,13 @@ class TurnEvaluation(BaseModel):
     vague_quotes: list[str]         # 用户回答中的含糊原话
     said_dont_know: bool
     off_topic: bool                     # 用户回答是否偏离主题
+    score: int | None = Field(default=None, ge=0, le=100)
+    comment: str | None = Field(default=None, max_length=512)
+
+
+class StageScore(BaseModel):
+    kind: StageKind
+    score: int = Field(ge=0, le=100)
 
 
 class InterviewTurnSubmitRequest(BaseModel):
@@ -69,6 +76,8 @@ class InterviewTurnSubmitRequest(BaseModel):
 
 # 汇总
 class InterviewReport(BaseModel):
+    score: int = Field(ge=0, le=100)
+    stages: list[StageScore] = Field(default_factory=list)
     covered: list[str]
     missing: list[str]
     said_dont_know_count: int = 0
@@ -85,6 +94,8 @@ class InterviewTurnPublic(BaseModel):
     seq:int
     question:str
     answer:str
+    score: int | None = None
+    comment: str | None = None
 
 class InterviewSessionGetResponse(BaseModel):
     id:int

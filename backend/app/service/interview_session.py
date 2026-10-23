@@ -27,6 +27,7 @@ from app.schemas.interviews import (
     TurnEvaluation,
 )
 from app.schemas.resumes import ResumeProfile
+from app.service.interview_score import build_interview_report, gate_evaluation
 
 MAX_CANDIDATE_CARDS = 12
 PLAN_RETRY = 1
@@ -448,22 +449,28 @@ async def create_interview_session_service(
 
 
 # 汇总各轮评估为报告
-def _session_report(turns: list[InterviewTurn]) -> InterviewReport:
-    covered: list[str] = []
-    missing: list[str] = []
-    dont_know = 0
+def _session_report(plan: InterviewPlan, turns: list[InterviewTurn]) -> InterviewReport:
+    items: list[tuple[int, TurnEvaluation]] = []
     for turn in turns:
         if not turn.evaluation:
             continue
-        item = TurnEvaluation.model_validate(turn.evaluation)
-        covered.extend(item.covered)
-        missing.extend(item.missing)
-        if item.said_dont_know:
-            dont_know += 1
-    return InterviewReport(
-        covered=sorted(set(covered)),
-        missing=sorted(set(missing)),
-        said_dont_know_count=dont_know,
+        items.append((turn.stage_index, TurnEvaluation.model_validate(turn.evaluation)))
+    return build_interview_report(plan=plan, items=items)
+
+
+def _public_turn(turn: InterviewTurn, *, completed: bool) -> InterviewTurnPublic:
+    score = None
+    comment = None
+    if completed and turn.evaluation:
+        evaluation = gate_evaluation(TurnEvaluation.model_validate(turn.evaluation))
+        score = evaluation.score
+        comment = evaluation.comment
+    return InterviewTurnPublic(
+        seq=turn.seq,
+        question=turn.question,
+        answer=turn.answer,
+        score=score,
+        comment=comment,
     )
 
 
@@ -491,25 +498,21 @@ async def get_interview_session_service(
     turns = list(turns_result.scalars().all())
 
     pending = next((turn for turn in turns if turn.answer == ""), None)
+    completed = session_row.status == "completed"
     answered = [
-        InterviewTurnPublic(
-            seq=turn.seq,
-            question=turn.question,
-            answer=turn.answer,
-        )
+        _public_turn(turn, completed=completed)
         for turn in turns
         if turn.answer != ""
     ]
-
-    completed = session_row.status == "completed"
+    plan = InterviewPlan.model_validate(session_row.plan)
     return InterviewSessionGetResponse(
         id=session_row.id,
         resume_id=session_row.resume_id,
         target_role=session_row.target_role,
-        difficulty=session_row.difficulty,  # 若类型检查报错，改成 schema 里 difficulty: str
+        difficulty=session_row.difficulty,
         status=session_row.status,
         created_at=session_row.created_at,
         turns=answered,
         current_question=None if completed else (pending.question if pending else None),
-        report=_session_report(turns) if completed else None,
+        report=_session_report(plan, turns) if completed else None,
     )

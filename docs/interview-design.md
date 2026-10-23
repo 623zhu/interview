@@ -17,7 +17,9 @@
 | 部分 | 谁做 | 做什么 |
 | --- | --- | --- |
 | 计划 | 开场前一次模型调用（`llm_model_heavy`） | 根据简历、岗位、难度和候选考点卡列出本场考点、顺序和每段最多几轮 |
-| 评估 | 用户每答完一次模型调用（`llm_model_light`） | 判断覆盖了哪些要点、深度如何、哪里含糊、是否明确说了「不会」 |
+| 评估 | 用户每答完一次模型调用（`llm_model_light`） | 判断覆盖了哪些要点、深度如何、哪里含糊、是否明确说了「不会」，并给出本轮分数和点评 |
+| 分数闸 | Python 规则 | 把模型分钳到与 `depth` / 跑题 / 「不会」一致的区间，点评开头的分数必须等于该整数 |
+| 总分 | Python 规则 | 各轮闸后分数按阶段平均，再按 `kind` 加权；开场和收尾不计分 |
 | 流程控制 | Python 规则（图中的 `decide` 节点） | 决定追问、加深、给提示、换考点还是结束 |
 | 措辞 | 另一次模型调用 | 按规则指定的动作生成下一问，不评价对错，不说出答案 |
 | 题库 | 考点卡 | 提供要点、追问路线和常见误区；检索结果是素材，不是原题 |
@@ -170,7 +172,13 @@ class TurnEvaluation(BaseModel):
     vague_quotes: list[str]
     said_dont_know: bool
     off_topic: bool
+    score: int | None          # 0-100，模型给出，代码闸后再写入
+    comment: str | None        # 以「本轮 {score} 分。」开头的一两句理由
 ```
+
+分数闸：`shallow` 不超过 50，`adequate` 在 40～85，`deep` 不低于 70；`said_dont_know` 不超过 30，`off_topic` 不超过 40。点评里的分数与闸后整数对齐。`decide` 仍只看结构化字段，不看分数。
+
+总分：同一 `stage_index` 先平均，两段 `fundamentals` 再合成一个阶段分，然后 `project_probe` 0.35、`fundamentals` 0.30、`scenario` 0.35。缺某个计分阶段时把权重摊到其余阶段。`intro` / `closing` 权重为 0。用户只在结束后的 GET 里看到各轮 `score`、`comment` 和报告里的总分、阶段分。
 
 `decide_next_action` 是纯函数，输入评估结果、`progress`、当前 `stage`，输出一个动作。输入相同则输出相同，用单测覆盖性格，不必为了测规则去跑整张图。
 
@@ -230,8 +238,8 @@ class TurnEvaluation(BaseModel):
 
 - `interview_sessions`：谁在面、哪份简历、岗位、难度、简历快照、计划、进度、状态。开场前就要落库，与是否使用 LangGraph 无关。
 - `interview_turns`：每一轮的动作、问题、回答、评估。`answer` 为空字符串表示正在等用户（列为 `NOT NULL`）。
-- 报告阶段汇总各轮评估，不必再把整段对话交给模型重新判断。
-- 用户接口不返回 `plan` 和各轮 `evaluation`；评估只进报告。
+- 报告阶段汇总各轮评估并按阶段加权出总分，不必再把整段对话交给模型重新判断。
+- 用户接口不返回 `plan` 和各轮完整 `evaluation`。结束后的 GET 只公开闸后的 `score` 与 `comment`。
 
 状态：`planned` / `in_progress` / `completed` / `abandoned`。创建成功并给出第一问后即为 `in_progress`。
 
@@ -244,7 +252,7 @@ class TurnEvaluation(BaseModel):
 1. 已完成：`interview_turns` 表，会话 schema（`created_at`、阶段 `source=bank`、`topic_card_key`）。
 2. 已完成：`POST /api/v1/interview-sessions` 选卡、生成计划、出第一问。尚未包成 `plan_graph`。
 3. 已完成：`turn_graph` 与 `POST /api/v1/interview-sessions/{id}/turns`。`intro` 答完即换到 `project_probe`。
-4. 部分完成：`closing` 用模板收尾，报告汇总各轮评估。`GET /api/v1/interview-sessions/{id}` 未做。
+4. 已完成：`closing` 用模板收尾；每轮模型给分和点评，代码做闸，结束按阶段加权。`GET /api/v1/interview-sessions/{id}` 只读库，结束后返回点评、分数和报告。
 5. LangSmith 观测、跨场次去重、向量检索。把创建场次也收成 `plan_graph`。
 
 考点卡已经入库，计划和基础/场景阶段从第一版就可以引用卡片。不要做成抽卡念题。

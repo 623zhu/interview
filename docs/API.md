@@ -32,7 +32,7 @@
 | 简历 | `POST` | `/api/v1/resumes` | 上传简历并结构化 | 已实现 |
 | 简历 | `GET` | `/api/v1/resumes` | 当前用户的简历列表 | 已实现 |
 | 面试 | `POST` | `/api/v1/interview-sessions` | 创建场次、生成计划、给出第一问 | 已实现 |
-| 面试 | `GET` | `/api/v1/interview-sessions/{id}` | 查询场次与问答，不返回计划 | 待实现 |
+| 面试 | `GET` | `/api/v1/interview-sessions/{id}` | 查询场次与问答，不返回计划 | 已实现 |
 | 面试 | `POST` | `/api/v1/interview-sessions/{id}/turns` | 提交本轮回答，返回下一问或报告 | 已实现 |
 
 考点卡没有对外接口，用导入脚本写入。
@@ -267,11 +267,11 @@ Authorization: Bearer <access_token>
 
 简历不存在或不属于当前用户返回 `404`。简历未就绪返回 `400`。生成计划失败返回 `500`，文案「生成面试计划失败」。`resume_id` 或 `difficulty` 不合法返回 `422`。
 
-## 查询面试场次（待实现）
+## 查询面试场次
 
 `GET /api/v1/interview-sessions/{id}`
 
-需要认证。只返回当前用户的场次。不含 `plan` 和各轮 `evaluation`。
+需要认证。只返回当前用户的场次。不含 `plan` 和各轮完整 `evaluation`。进行中不返回分数和点评。
 
 成功返回 `200`：
 
@@ -287,11 +287,47 @@ Authorization: Bearer <access_token>
     {
       "seq": 1,
       "question": "先做个一分钟自我介绍吧，可以结合你最近的项目。",
-      "answer": "我最近在做订单系统……"
+      "answer": "我最近在做订单系统……",
+      "score": null,
+      "comment": null
     }
   ],
   "current_question": "你刚才提到订单系统用了 Redis，缓存和数据库不一致怎么处理？",
   "report": null
+}
+```
+
+已结束时 `current_question` 为 `null`，各轮带 `score` 与 `comment`，`report` 为加权总分：
+
+```json
+{
+  "id": 1,
+  "resume_id": 1,
+  "target_role": "Java 后端",
+  "difficulty": "medium",
+  "status": "completed",
+  "created_at": "2026-10-20T08:00:00Z",
+  "turns": [
+    {
+      "seq": 3,
+      "question": "缓存和数据库不一致怎么处理？",
+      "answer": "我们先更新数据库再删缓存，失败会重试。",
+      "score": 58,
+      "comment": "本轮 58 分。讲到了更新顺序和失败重试，没展开并发下的短暂不一致。"
+    }
+  ],
+  "current_question": null,
+  "report": {
+    "score": 72,
+    "stages": [
+      { "kind": "project_probe", "score": 80 },
+      { "kind": "fundamentals", "score": 65 },
+      { "kind": "scenario", "score": 70 }
+    ],
+    "covered": ["intro", "p1"],
+    "missing": ["p2"],
+    "said_dont_know_count": 0
+  }
 }
 ```
 
@@ -326,7 +362,7 @@ Authorization: Bearer <access_token>
 }
 ```
 
-最后一轮完成后 `status` 为 `completed`，`current_turn` 为 `null`，`report` 为各轮评估汇总：
+最后一轮完成后 `status` 为 `completed`，`current_turn` 为 `null`，`report` 为各轮评估汇总。本轮点评仍不出现在这次响应里，结束后用 GET 查看：
 
 ```json
 {
@@ -334,6 +370,12 @@ Authorization: Bearer <access_token>
   "status": "completed",
   "current_turn": null,
   "report": {
+    "score": 72,
+    "stages": [
+      { "kind": "project_probe", "score": 80 },
+      { "kind": "fundamentals", "score": 65 },
+      { "kind": "scenario", "score": 70 }
+    ],
     "covered": ["intro", "p1"],
     "missing": ["p2"],
     "said_dont_know_count": 0
@@ -343,7 +385,7 @@ Authorization: Bearer <access_token>
 
 没有待答轮次、场次已结束或已放弃返回 `409`。场次不存在或不属于当前用户返回 `404`。空回答返回 `422`。评估或出题失败返回 `500`，文案「处理本轮回答失败」。
 
-用户响应中不返回本轮 `evaluation`。评估只写入 `interview_turns.evaluation`，结束时汇总进 `report`。`intro` / `closing` 用代码评估，不调模型；`closing` 问句为模板。
+用户响应中不返回本轮完整 `evaluation`。评估写入 `interview_turns.evaluation`（含模型给出的分数和点评）。代码按深度、跑题、「不会」把分数钳在区间内，并让点评开头的分数与之一致。结束时按阶段加权：`project_probe` 0.35、`fundamentals` 0.30、`scenario` 0.35；同一 `kind` 的多段先平均，开场和收尾不计分。`intro` / `closing` 用代码评估，不调模型；`closing` 问句为模板。
 
 ## 业务流程
 
@@ -361,7 +403,7 @@ Authorization: Bearer <access_token>
 2. `GET /api/v1/resumes` 选择一份简历。
 3. `POST /api/v1/interview-sessions` 开始面试，拿到第一问。
 4. 循环 `POST /api/v1/interview-sessions/{id}/turns` 提交回答，直到 `status=completed`。
-5. `GET /api/v1/interview-sessions/{id}` 查看问答和报告（待实现；进行中可看每次 turns 响应里的 `current_turn`）。
+5. `GET /api/v1/interview-sessions/{id}` 查看问答；结束后还可看各轮点评、分数和报告。进行中也可看每次 turns 响应里的 `current_turn`。
 
 每一次提交回答对应一次 `turn_graph.ainvoke`。创建场次目前走 service，语义与计划中的 `plan_graph` 相同。编排说明见 `docs/interview-design.md`。
 

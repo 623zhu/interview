@@ -1,4 +1,4 @@
-from app.schemas.interview_sessions import (
+from app.schemas.interviews import (
     InterviewProgress,
     InterviewStage,
     TurnAction,

@@ -132,7 +132,7 @@
 
 ### `interview_turns`
 
-用途：一场面试中的每一轮。提交回答时写入 `answer` 和 `evaluation`，再插入下一轮（`answer` 为空字符串，表示正在等用户）。报告汇总这些评估，不再把整场对话交给模型。
+用途：一场面试中的每一轮。提交回答时写入 `answer` 和 `evaluation`，再插入下一轮（`answer` 为空字符串，表示正在等用户）。报告汇总这些评估并按阶段加权出总分，不再把整场对话交给模型。
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 | 索引/约束 |
 | --- | --- | --- | --- | --- | --- |
@@ -143,7 +143,7 @@
 | `action` | `VARCHAR(255)` | 是 | 无 | `first` / `follow_up` / `deepen` / `hint` / `next_stage` / `end` |  |
 | `question` | `VARCHAR(2048)` | 是 | 无 | 给用户看的问题 |  |
 | `answer` | `VARCHAR(8000)` | 是 | 无 | 用户回答。空字符串表示本轮尚未作答。当前列为 `NOT NULL` |  |
-| `evaluation` | `JSON` | 否 | 空 | 答完后的评估。`NULL` 表示尚未评估。用户接口不返回 |  |
+| `evaluation` | `JSON` | 否 | 空 | 答完后的评估。`NULL` 表示尚未评估。完整结构不对用户返回；结束后 GET 只公开其中的 `score`、`comment` |  |
 | `created_at` | `DATETIME(6)` | 是 | 无 | 创建时间，由应用写入 UTC |  |
 | `updated_at` | `DATETIME(6)` | 是 | 无 | 更新时间，由应用写入 UTC |  |
 
@@ -156,11 +156,13 @@
   "depth": "shallow",
   "vague_quotes": ["status 在左边就能用"],
   "said_dont_know": false,
-  "off_topic": false
+  "off_topic": false,
+  "score": 42,
+  "comment": "本轮 42 分。讲到了最左前缀，但没说明范围查询为何走不成索引。"
 }
 ```
 
-`depth` 取值：`shallow` / `adequate` / `deep`。轮次生命周期完全依附场次，外键使用 `ON DELETE CASCADE`。
+`depth` 取值：`shallow` / `adequate` / `deep`。`score` 为 0～100，写入前由代码按深度、跑题、「不会」钳制，并与 `comment` 开头的分数对齐。轮次生命周期完全依附场次，外键使用 `ON DELETE CASCADE`。
 
 ## 表关系
 

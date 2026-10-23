@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from app.api.deps import CurrentUser
 from app.graphs.turn_graph import (
     SessionConflictError,
-    SessionNotFoundError,
+    SessionNotFoundError as TurnSessionNotFoundError,
     TurnPipelineError,
 )
 from app.schemas.interviews import (
@@ -74,7 +74,7 @@ async def submit_interview_turn(
                 llm_client=request.app.state.llm_client,
                 turn_graph=request.app.state.turn_graph,
             )
-        except SessionNotFoundError:
+        except (TurnSessionNotFoundError, SessionNotFoundError):
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="面试场次不存在")
         except SessionConflictError:
             raise HTTPException(status.HTTP_409_CONFLICT, detail="当前场次无法作答")
@@ -88,7 +88,7 @@ async def submit_interview_turn(
     "/{session_id}",
     status_code=status.HTTP_200_OK,
     summary="获取面试场次",
-     description="返回当前用户的场次与问答，不含计划和各轮评估",
+    description="返回当前用户的场次与问答。不含计划。结束后才返回各轮点评、分数和报告。",
 )
 async def get_interview_session(
     session_id: int,
