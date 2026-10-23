@@ -12,7 +12,7 @@
 | `resumes` | 用户上传的简历 | `id` | 原文和结构化资料 |
 | `topic_cards` | 面试考点卡 | `id` | 全局素材，不挂用户 |
 | `interview_sessions` | 一场模拟面试 | `id` | 开场前写入计划和简历快照 |
-| `interview_turns` | 一场面试中的一轮问答 | `id` | 待建。评估和问题按轮保存 |
+| `interview_turns` | 一场面试中的一轮问答 | `id` | 评估和问题按轮保存。待答时 `answer` 为空字符串 |
 
 验证码、刷新令牌和短期限流放 Redis，不建表。
 
@@ -128,22 +128,22 @@
 }
 ```
 
-当前迁移中的外键名是 `fk_interview_sessions_user_id`、`fk_interview_sessions_resume_id`，未带被引用表后缀。新建外键仍按规则 `fk_<表>_<列>_<引用表>`。
+当前迁移中的外键名是 `fk_interview_sessions_user_id`、`fk_interview_sessions_resume_id`，以及 `fk_interview_turn_session_id_interview_sessions`（表名用了单数 `turn`），未完全按 `fk_<表>_<列>_<引用表>`。新建外键仍按该规则。
 
-### `interview_turns`（待建）
+### `interview_turns`
 
-用途：一场面试中的每一轮。提交回答时写入 `answer` 和 `evaluation`，再插入下一轮（`answer` 为空，表示正在等用户）。报告汇总这些评估，不再把整场对话交给模型。
+用途：一场面试中的每一轮。提交回答时写入 `answer` 和 `evaluation`，再插入下一轮（`answer` 为空字符串，表示正在等用户）。报告汇总这些评估，不再把整场对话交给模型。
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 | 索引/约束 |
 | --- | --- | --- | --- | --- | --- |
 | `id` | `BIGINT UNSIGNED` | 是 | 自增 | 主键 | `PRIMARY KEY` |
-| `session_id` | `BIGINT UNSIGNED` | 是 | 无 | 所属场次。场次删除时级联删除轮次 | `fk_interview_turns_session_id_interview_sessions` |
-| `seq` | `INT` | 是 | 无 | 场内从 1 递增 | `uq_interview_turns_session_id_seq` |
+| `session_id` | `BIGINT UNSIGNED` | 是 | 无 | 所属场次。场次删除时级联删除轮次 | `fk_interview_turn_session_id_interview_sessions` |
+| `seq` | `INT` | 是 | 无 | 场内从 1 递增 | `uq_interview_turn_session_id_seq` |
 | `stage_index` | `INT` | 是 | 无 | 对应 `plan.stages` 下标，从 0 起 |  |
-| `action` | `VARCHAR(32)` | 是 | 无 | `first` / `follow_up` / `deepen` / `hint` / `next_stage` / `end` |  |
+| `action` | `VARCHAR(255)` | 是 | 无 | `first` / `follow_up` / `deepen` / `hint` / `next_stage` / `end` |  |
 | `question` | `VARCHAR(2048)` | 是 | 无 | 给用户看的问题 |  |
-| `answer` | `VARCHAR(8000)` | 否 | 空 | 用户回答。空表示本轮尚未作答 |  |
-| `evaluation` | `JSON` | 否 | 空 | 答完后的评估。空表示尚未评估。用户接口不返回 |  |
+| `answer` | `VARCHAR(8000)` | 是 | 无 | 用户回答。空字符串表示本轮尚未作答。当前列为 `NOT NULL` |  |
+| `evaluation` | `JSON` | 否 | 空 | 答完后的评估。`NULL` 表示尚未评估。用户接口不返回 |  |
 | `created_at` | `DATETIME(6)` | 是 | 无 | 创建时间，由应用写入 UTC |  |
 | `updated_at` | `DATETIME(6)` | 是 | 无 | 更新时间，由应用写入 UTC |  |
 
@@ -176,7 +176,7 @@ erDiagram
 - `resumes.user_id` → `users.id`，`ON DELETE RESTRICT`
 - `interview_sessions.user_id` → `users.id`，`ON DELETE RESTRICT`
 - `interview_sessions.resume_id` → `resumes.id`，`ON DELETE RESTRICT`
-- `interview_turns.session_id` → `interview_sessions.id`，`ON DELETE CASCADE`（待建）
+- `interview_turns.session_id` → `interview_sessions.id`，`ON DELETE CASCADE`
 - `topic_cards` 是全局素材。计划用 `topic_card_key` 引用，不建外键，避免改卡或重导种子时卡住历史场次。
 
 ## Redis 键
@@ -196,8 +196,8 @@ erDiagram
 | `uq_topic_cards_key` | `topic_cards` | `key` | 唯一 | 禁止重复考点 slug |
 | `fk_interview_sessions_user_id` | `interview_sessions` | `user_id` | 外键 | 按用户查场次 |
 | `fk_interview_sessions_resume_id` | `interview_sessions` | `resume_id` | 外键 | 限制删除仍被引用的简历 |
-| `fk_interview_turns_session_id_interview_sessions` | `interview_turns` | `session_id` | 外键 | 待建。按场次拉轮次 |
-| `uq_interview_turns_session_id_seq` | `interview_turns` | `session_id, seq` | 唯一 | 待建。同一场序号不重复 |
+| `fk_interview_turn_session_id_interview_sessions` | `interview_turns` | `session_id` | 外键 | 按场次拉轮次。命名按当时模型，未带表名复数 |
+| `uq_interview_turn_session_id_seq` | `interview_turns` | `session_id, seq` | 唯一 | 同一场序号不重复 |
 
 ## 数据迁移
 
@@ -205,11 +205,11 @@ erDiagram
 | --- | --- | --- | --- | --- |
 | `cc267a266b69` | 2026-10-12 | 创建 `users` 表 | `alembic downgrade` 到空库，删除 `users` | 已执行 |
 | `54098f4c206e` | 2026-10-18 | 创建 `resumes` 表 | `alembic downgrade -1`，删除 `resumes` | 已执行 |
-| `3f212b686956` | 2026-10-20 | 创建 `interview_sessions` 表 | `alembic downgrade -1`，删除 `interview_sessions` | 已生成 |
-| `a41683e0a265` | 2026-10-20 | 创建 `topic_cards` 表 | `alembic downgrade -1`，删除 `topic_cards` | 已生成 |
-| 待定 | 待定 | 创建 `interview_turns` 表 | 删除 `interview_turns` | 未开始 |
+| `3f212b686956` | 2026-10-20 | 创建 `interview_sessions` 表 | `alembic downgrade -1`，删除 `interview_sessions` | 已执行 |
+| `a41683e0a265` | 2026-10-20 | 创建 `topic_cards` 表 | `alembic downgrade -1`，删除 `topic_cards` | 已执行 |
+| `1ce649d360ab` | 2026-10-21 | 创建 `interview_turns` 表 | `alembic downgrade -1`，删除 `interview_turns` | 已执行 |
 
-升级：在 `backend/` 执行 `alembic upgrade head`。当前 head 为 `a41683e0a265`。
+升级：在 `backend/` 执行 `alembic upgrade head`。当前 head 为 `1ce649d360ab`。库中已有 `users`、`resumes`、`interview_sessions`、`topic_cards`、`interview_turns`。
 
 种子：迁移完成后执行 `python scripts/import_topic_cards.py`。
 

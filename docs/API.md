@@ -4,7 +4,7 @@
 
 路径和字段以 OpenAPI 为准：`/docs`、`/redoc`、`/openapi.json`。
 
-已实现的接口以当前路由为准。面试场次接口已设计、尚未挂路由，在对应小节标明「待实现」。
+已实现的接口以当前路由为准。尚未挂路由的接口在对应小节标明「待实现」。
 
 ## 基础信息
 
@@ -31,9 +31,9 @@
 | 用户 | `POST` | `/api/v1/users/password-reset` | 校验验证码并重置密码 | 已实现 |
 | 简历 | `POST` | `/api/v1/resumes` | 上传简历并结构化 | 已实现 |
 | 简历 | `GET` | `/api/v1/resumes` | 当前用户的简历列表 | 已实现 |
-| 面试 | `POST` | `/api/v1/interview-sessions` | 创建场次、生成计划、给出第一问 | 待实现 |
+| 面试 | `POST` | `/api/v1/interview-sessions` | 创建场次、生成计划、给出第一问 | 已实现 |
 | 面试 | `GET` | `/api/v1/interview-sessions/{id}` | 查询场次与问答，不返回计划 | 待实现 |
-| 面试 | `POST` | `/api/v1/interview-sessions/{id}/turns` | 提交本轮回答，返回下一问或报告 | 待实现 |
+| 面试 | `POST` | `/api/v1/interview-sessions/{id}/turns` | 提交本轮回答，返回下一问或报告 | 已实现 |
 
 考点卡没有对外接口，用导入脚本写入。
 
@@ -229,11 +229,11 @@ Authorization: Bearer <access_token>
 ]
 ```
 
-## 创建面试场次（待实现）
+## 创建面试场次
 
 `POST /api/v1/interview-sessions`
 
-需要认证。简历必须属于当前用户且 `status=ready`。服务端拷贝 `profile` 为 `resume_snapshot`，跑 `plan_graph` 生成计划并写出第一问，`status` 设为 `in_progress`。响应不含 `plan`。
+需要认证。简历必须属于当前用户且 `status=ready`。服务端拷贝 `profile` 为 `resume_snapshot`，按岗位和技能过滤考点卡，调用 `llm_model_heavy` 生成计划，用模板写出第一问，`status` 设为 `in_progress`。响应不含 `plan`。当前是 service 流水线，尚未包成 `plan_graph`。
 
 请求体：
 
@@ -265,7 +265,7 @@ Authorization: Bearer <access_token>
 }
 ```
 
-简历不存在或不属于当前用户返回 `404`。简历未就绪返回 `400`。`resume_id` 或 `difficulty` 不合法返回 `422`。
+简历不存在或不属于当前用户返回 `404`。简历未就绪返回 `400`。生成计划失败返回 `500`，文案「生成面试计划失败」。`resume_id` 或 `difficulty` 不合法返回 `422`。
 
 ## 查询面试场次（待实现）
 
@@ -297,11 +297,11 @@ Authorization: Bearer <access_token>
 
 `current_question` 为当前等待回答的问题；已结束时为 `null`。`report` 仅在 `status=completed` 时有值。场次不存在或不属于当前用户返回 `404`。
 
-## 提交本轮回答（待实现）
+## 提交本轮回答
 
 `POST /api/v1/interview-sessions/{id}/turns`
 
-需要认证。将当前待答轮次写入 `answer`，跑 `turn_graph`：评估、规则决定动作、生成下一问或报告。
+需要认证。将当前待答轮次写入 `answer`，对进程内已 `compile()` 的 `turn_graph` 做一次 `ainvoke`：评估、规则决定动作、生成下一问或报告。图不保存跨请求状态。
 
 请求体：
 
@@ -326,9 +326,24 @@ Authorization: Bearer <access_token>
 }
 ```
 
-最后一轮完成后 `status` 为 `completed`，`current_turn` 为 `null`，`report` 为汇总结果。没有待答轮次、场次已结束或已放弃返回 `409`。场次不存在或不属于当前用户返回 `404`。空回答返回 `422`。
+最后一轮完成后 `status` 为 `completed`，`current_turn` 为 `null`，`report` 为各轮评估汇总：
 
-用户响应中不返回本轮 `evaluation`。评估只写入 `interview_turns.evaluation`，结束时汇总进 `report`。
+```json
+{
+  "id": 1,
+  "status": "completed",
+  "current_turn": null,
+  "report": {
+    "covered": ["intro", "p1"],
+    "missing": ["p2"],
+    "said_dont_know_count": 0
+  }
+}
+```
+
+没有待答轮次、场次已结束或已放弃返回 `409`。场次不存在或不属于当前用户返回 `404`。空回答返回 `422`。评估或出题失败返回 `500`，文案「处理本轮回答失败」。
+
+用户响应中不返回本轮 `evaluation`。评估只写入 `interview_turns.evaluation`，结束时汇总进 `report`。`intro` / `closing` 用代码评估，不调模型；`closing` 问句为模板。
 
 ## 业务流程
 
@@ -340,15 +355,15 @@ Authorization: Bearer <access_token>
 4. 之后请求带 `Authorization: Bearer <access_token>`。
 5. `DELETE /api/v1/users/session` 吊销刷新令牌。
 
-模拟面试（待实现部分从第 3 步起）：
+模拟面试：
 
 1. `POST /api/v1/resumes` 上传简历，直到 `status=ready`。
 2. `GET /api/v1/resumes` 选择一份简历。
 3. `POST /api/v1/interview-sessions` 开始面试，拿到第一问。
 4. 循环 `POST /api/v1/interview-sessions/{id}/turns` 提交回答，直到 `status=completed`。
-5. `GET /api/v1/interview-sessions/{id}` 查看问答和报告。
+5. `GET /api/v1/interview-sessions/{id}` 查看问答和报告（待实现；进行中可看每次 turns 响应里的 `current_turn`）。
 
-一次创建会话对应一次 `plan_graph`；每一次提交回答对应一次 `turn_graph`。编排说明见 `docs/interview-design.md`。
+每一次提交回答对应一次 `turn_graph.ainvoke`。创建场次目前走 service，语义与计划中的 `plan_graph` 相同。编排说明见 `docs/interview-design.md`。
 
 ## 待补充内容
 

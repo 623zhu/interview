@@ -15,7 +15,7 @@ from app.graphs.state import TurnState
 from app.models.interview_sessions import InterviewSession
 from app.models.interview_turn import InterviewTurn
 from app.models.topic_cards import TopicCard
-from app.schemas.interview_sessions import (
+from app.schemas.interviews import (
     InterviewPlan,
     InterviewProgress,
     InterviewReport,
@@ -68,11 +68,12 @@ class _AskOutput(BaseModel):
     question: str = Field(min_length=1, max_length=2048)
 
 
+# 从langGraph 配置中取出数据库会话，用户编号和模型客户端
 def _cfg(config: RunnableConfig) -> dict[str, Any]:
     configurable = config.get("configurable") or {}
     return configurable
 
-
+# 靠点卡->字典
 def _dump_card(card: TopicCard | None) -> dict[str, Any] | None:
     if card is None:
         return None
@@ -85,7 +86,7 @@ def _dump_card(card: TopicCard | None) -> dict[str, Any] | None:
         "pitfalls": card.pitfalls,
     }
 
-
+# 简历项目匹配
 def _find_project(profile: ResumeProfile, anchor: str | None) -> ProjectItem | None:
     if not anchor:
         return None
@@ -94,7 +95,7 @@ def _find_project(profile: ResumeProfile, anchor: str | None) -> ProjectItem | N
             return item
     return None
 
-
+# 根据阶段、简历、点卡生成评估标准
 def _rubric(
     stage: InterviewStage,
     profile: ResumeProfile,
@@ -115,7 +116,7 @@ def _rubric(
         return [{"id": "closing", "text": "是否正常收尾或提出问题"}]
     return [{"id": "g1", "text": stage.goal}]
 
-
+# 开场和收尾的评估
 def _stub_evaluation(stage: InterviewStage) -> TurnEvaluation:
     point_id = "intro" if stage.kind == "intro" else "closing"
     return TurnEvaluation(
@@ -135,7 +136,7 @@ def _probe_step(card: dict[str, Any] | None, turn_in_stage: int) -> dict[str, st
     index = min(max(turn_in_stage - 1, 0), len(path) - 1)
     return path[index]
 
-
+# 按照考点卡查找已发布卡片
 async def _load_card(db: AsyncSession, key: str | None) -> TopicCard | None:
     if not key:
         return None
@@ -264,7 +265,7 @@ def decide(state: TurnState) -> dict[str, Any]:
 def route_after_decide(state: TurnState) -> str:
     return "report" if state.get("action") == "end" else "ask"
 
-
+# 综合各轮评估为报告。
 def report(state: TurnState) -> dict[str, Any]:
     covered: list[str] = []
     missing: list[str] = []
@@ -368,7 +369,7 @@ async def ask(state: TurnState, config: RunnableConfig) -> dict[str, Any]:
             last_error = exc
     raise TurnPipelineError(str(last_error) if last_error else "ask failed")
 
-
+# 本轮回答和评估写回数据库
 async def persist(state: TurnState, config: RunnableConfig) -> dict[str, Any]:
     cfg = _cfg(config)
     db: AsyncSession = cfg["db"]

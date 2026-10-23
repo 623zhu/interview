@@ -1,6 +1,6 @@
 from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.schemas.interview_sessions import InterviewTurnSubmitResponse,InterviewReport,CurrentTurn
+from app.schemas.interviews import InterviewTurnSubmitResponse,InterviewReport,CurrentTurn
 
 async def submit_turn_service(
     *,
@@ -23,7 +23,7 @@ async def submit_turn_service(
                 "session_id":session_id,
                 "graph":"turn_graph",
             },
-            "recursion_limt":10,
+            "recursion_limit":10,
         },
     )
     ended = final_state.get("action") == "end"

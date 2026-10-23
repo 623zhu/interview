@@ -17,7 +17,8 @@
 - 新增用户表，用于保存注册账号。邮箱不可重复，密码只存哈希。
 - 新增简历表和上传、列表接口。登录后可上传 PDF / Word，服务端抽取文本并结构化。
 - 新增考点卡表和 24 张 Java 后端种子卡，供计划生成和评估使用。
-- 新增面试场次表。一轮内部用 LangGraph 编排：一次 HTTP 跑完一张图，档案仍以 MySQL 为准。
+- 新增面试场次表和轮次表。登录后可创建面试、提交回答。
+- 提交回答时一次 HTTP 跑完一张 `turn_graph`：评估、规则决定下一步、出下一问或报告。档案仍以 MySQL 为准，不用 LangGraph checkpointer。
 
 ### Changed
 
@@ -25,9 +26,9 @@
 
 ### Database / Deployment Notes
 
-- 数据库迁移：在 `backend/` 执行 `alembic upgrade head`。顺序为 `cc267a266b69`（`users`）、`54098f4c206e`（`resumes`）、`3f212b686956`（`interview_sessions`）、`a41683e0a265`（`topic_cards`）。
+- 数据库迁移：在 `backend/` 执行 `alembic upgrade head`。顺序为 `cc267a266b69`（`users`）、`54098f4c206e`（`resumes`）、`3f212b686956`（`interview_sessions`）、`a41683e0a265`（`topic_cards`）、`1ce649d360ab`（`interview_turns`）。当前 head 为 `1ce649d360ab`，上述表均已建好。
 - 种子数据：迁移完成后在 `backend/` 执行 `python scripts/import_topic_cards.py`，按 `key` upsert 24 张考点卡。
-- `interview_turns` 尚未建表。实现提交回答接口前需要新迁移。
+- 依赖：`backend/requirements.txt` 增加 `langgraph>=0.2.45`。进程启动时 `compile()` `turn_graph`，挂到 `app.state`。
 - 回滚：`alembic downgrade -1` 会删除当前 head 对应的表及其数据。
 - 配置变更：无。LangSmith 接入时再增加追踪相关环境变量。
 

@@ -10,6 +10,8 @@ from app.api.user import router as user_router
 from app.api.resumes import router as resumes_router
 from app.api.interview_sessions import router as interview_sessions_router
 
+from app.graphs.turn_graph import build_turn_graph
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     mysql_engine = create_engine(settings)
@@ -17,6 +19,7 @@ async def lifespan(app: FastAPI):
     app.state.redis_client = create_redis_client(settings)
     app.state.llm_client = create_llm_client(settings)
     app.state.embedding_client = create_embedding_client(settings)
+    app.state.turn_graph = build_turn_graph()
     try:
         yield
     finally:

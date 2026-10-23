@@ -6,17 +6,20 @@ from app.graphs.turn_graph import (
     SessionNotFoundError,
     TurnPipelineError,
 )
-from app.schemas.interview_sessions import (
+from app.schemas.interviews import (
     InterviewSessionCreateRequest,
     InterviewSessionCreateResponse,
     InterviewTurnSubmitRequest,
     InterviewTurnSubmitResponse,
+    InterviewSessionGetResponse,
 )
 from app.service.interview_session import (
     PlanGenerationError,
     ResumeNotFoundError,
     ResumeNotReadyError,
     create_interview_session_service,
+    get_interview_session_service,
+    SessionNotFoundError,
 )
 from app.service.interview_turn import submit_turn_service
 
@@ -80,3 +83,25 @@ async def submit_interview_turn(
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="处理本轮回答失败",
             )
+
+@router.get(
+    "/{session_id}",
+    status_code=status.HTTP_200_OK,
+    summary="获取面试场次",
+     description="返回当前用户的场次与问答，不含计划和各轮评估",
+)
+async def get_interview_session(
+    session_id: int,
+    current_user: CurrentUser,
+    request: Request,
+) -> InterviewSessionGetResponse:
+    async with request.app.state.mysql_session_factory() as db:
+        try:
+            return await get_interview_session_service(
+                user_id=current_user.id, 
+                session_id=session_id, 
+                db=db
+            )
+        except SessionNotFoundError:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="面试场次不存在")
+        

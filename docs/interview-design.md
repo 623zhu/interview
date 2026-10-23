@@ -34,8 +34,8 @@
 
 | HTTP | 图 | 节点 |
 | --- | --- | --- |
-| `POST /api/v1/interview-sessions` | `plan_graph` | `load_resume` → `pick_cards` → `generate_plan` → `ask` → `persist` |
-| `POST /api/v1/interview-sessions/{id}/turns` | `turn_graph` | `load_session` → `evaluate` → `decide` → `ask` 或 `report` → `persist` |
+| `POST /api/v1/interview-sessions` | 计划流水线（尚未 `compile` 成 `plan_graph`） | `load_resume` → `pick_cards` → `generate_plan` → `ask` → `persist` |
+| `POST /api/v1/interview-sessions/{id}/turns` | `turn_graph`（启动时 `compile()`，挂 `app.state`） | `load_session` → `evaluate` → `decide` → `ask` 或 `report` → `persist` |
 
 `GET` 只读库，不跑图。
 
@@ -229,7 +229,7 @@ class TurnEvaluation(BaseModel):
 ## 数据
 
 - `interview_sessions`：谁在面、哪份简历、岗位、难度、简历快照、计划、进度、状态。开场前就要落库，与是否使用 LangGraph 无关。
-- `interview_turns`：每一轮的动作、问题、回答、评估。`answer` 为空表示正在等用户。
+- `interview_turns`：每一轮的动作、问题、回答、评估。`answer` 为空字符串表示正在等用户（列为 `NOT NULL`）。
 - 报告阶段汇总各轮评估，不必再把整段对话交给模型重新判断。
 - 用户接口不返回 `plan` 和各轮 `evaluation`；评估只进报告。
 
@@ -241,10 +241,10 @@ class TurnEvaluation(BaseModel):
 
 ## 开发顺序
 
-1. 补 `interview_turns` 表，修正会话 schema（`created_at`、阶段 `source=bank`、`topic_card_key`）。
-2. 实现 `plan_graph` 与 `POST /api/v1/interview-sessions`：选卡、生成计划、出第一问。
-3. 实现 `turn_graph` 与 `POST /api/v1/interview-sessions/{id}/turns`：评估、`decide`、下一问。先打通 `intro → project_probe → fundamentals`。
-4. `closing` 和报告。
-5. LangSmith 观测、跨场次去重、向量检索。
+1. 已完成：`interview_turns` 表，会话 schema（`created_at`、阶段 `source=bank`、`topic_card_key`）。
+2. 已完成：`POST /api/v1/interview-sessions` 选卡、生成计划、出第一问。尚未包成 `plan_graph`。
+3. 已完成：`turn_graph` 与 `POST /api/v1/interview-sessions/{id}/turns`。`intro` 答完即换到 `project_probe`。
+4. 部分完成：`closing` 用模板收尾，报告汇总各轮评估。`GET /api/v1/interview-sessions/{id}` 未做。
+5. LangSmith 观测、跨场次去重、向量检索。把创建场次也收成 `plan_graph`。
 
 考点卡已经入库，计划和基础/场景阶段从第一版就可以引用卡片。不要做成抽卡念题。

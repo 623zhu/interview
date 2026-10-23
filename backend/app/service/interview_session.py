@@ -14,13 +14,17 @@ from app.models.interview_sessions import InterviewSession
 from app.models.interview_turn import InterviewTurn   
 from app.models.resumes import Resume
 from app.models.topic_cards import TopicCard
-from app.schemas.interview_sessions import (
+from app.schemas.interviews import (
     CurrentTurn,
     Difficulty,
     InterviewPlan,
     InterviewProgress,
     InterviewSessionCreateResponse,
     InterviewStage,
+    InterviewSessionGetResponse,
+    InterviewReport,
+    InterviewTurnPublic,
+    TurnEvaluation,
 )
 from app.schemas.resumes import ResumeProfile
 
@@ -404,6 +408,9 @@ async def persist_session(
     await db.commit()
     return response
 
+class SessionNotFoundError(Exception):
+    pass
+
 # 创建面试会话
 async def create_interview_session_service(
     user_id: int,
@@ -437,4 +444,72 @@ async def create_interview_session_service(
         difficulty,
         plan,
         question,
+    )
+
+
+# 汇总各轮评估为报告
+def _session_report(turns: list[InterviewTurn]) -> InterviewReport:
+    covered: list[str] = []
+    missing: list[str] = []
+    dont_know = 0
+    for turn in turns:
+        if not turn.evaluation:
+            continue
+        item = TurnEvaluation.model_validate(turn.evaluation)
+        covered.extend(item.covered)
+        missing.extend(item.missing)
+        if item.said_dont_know:
+            dont_know += 1
+    return InterviewReport(
+        covered=sorted(set(covered)),
+        missing=sorted(set(missing)),
+        said_dont_know_count=dont_know,
+    )
+
+
+async def get_interview_session_service(
+    *,
+    user_id: int,
+    session_id: int,
+    db: AsyncSession,
+) -> InterviewSessionGetResponse:
+    result = await db.execute(
+        select(InterviewSession).where(
+            InterviewSession.id == session_id,
+            InterviewSession.user_id == user_id,
+        )
+    )
+    session_row = result.scalar_one_or_none()
+    if session_row is None:
+        raise SessionNotFoundError()
+
+    turns_result = await db.execute(
+        select(InterviewTurn)
+        .where(InterviewTurn.session_id == session_id)
+        .order_by(InterviewTurn.seq.asc())
+    )
+    turns = list(turns_result.scalars().all())
+
+    pending = next((turn for turn in turns if turn.answer == ""), None)
+    answered = [
+        InterviewTurnPublic(
+            seq=turn.seq,
+            question=turn.question,
+            answer=turn.answer,
+        )
+        for turn in turns
+        if turn.answer != ""
+    ]
+
+    completed = session_row.status == "completed"
+    return InterviewSessionGetResponse(
+        id=session_row.id,
+        resume_id=session_row.resume_id,
+        target_role=session_row.target_role,
+        difficulty=session_row.difficulty,  # 若类型检查报错，改成 schema 里 difficulty: str
+        status=session_row.status,
+        created_at=session_row.created_at,
+        turns=answered,
+        current_question=None if completed else (pending.question if pending else None),
+        report=_session_report(turns) if completed else None,
     )

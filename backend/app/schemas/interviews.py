@@ -8,6 +8,7 @@ StageKind = Literal["intro","project_probe","fundamentals","scenario","closing"]
 TurnAction = Literal["first", "follow_up", "deepen", "hint", "next_stage", "end"]
 SessionStatus = Literal["planned", "in_progress", "completed", "abandoned"]
 
+
 class InterviewSessionCreateRequest(BaseModel):
     resume_id:int = Field(...,description="The ID of the resume to create the interview session for")
     target_role:str = Field(...,min_length=1,max_length=128,description="The role the candidate is applying for")
@@ -77,4 +78,21 @@ class InterviewTurnSubmitResponse(BaseModel):
     id: int
     status: SessionStatus
     current_turn: CurrentTurn | None
+    report: InterviewReport | None = None
+
+
+class InterviewTurnPublic(BaseModel):
+    seq:int
+    question:str
+    answer:str
+
+class InterviewSessionGetResponse(BaseModel):
+    id:int
+    resume_id:int
+    target_role:str
+    difficulty: str
+    status: str
+    created_at: datetime
+    turns: list[InterviewTurnPublic]
+    current_question: str | None
     report: InterviewReport | None = None
