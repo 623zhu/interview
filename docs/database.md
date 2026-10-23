@@ -227,9 +227,9 @@ erDiagram
 | `3f212b686956` | 2026-10-20 | 创建 `interview_sessions` 表 | `alembic downgrade -1`，删除 `interview_sessions` | 已执行 |
 | `a41683e0a265` | 2026-10-20 | 创建 `topic_cards` 表 | `alembic downgrade -1`，删除 `topic_cards` | 已执行 |
 | `1ce649d360ab` | 2026-10-21 | 创建 `interview_turns` 表 | `alembic downgrade -1`，删除 `interview_turns` | 已执行 |
-| `c4f8a21b9d07` | 2026-10-23 | `interview_sessions` 增加可空 `report` | `alembic downgrade -1`，删除该列 | 待执行 |
+| `c4f8a21b9d07` | 2026-10-23 | `interview_sessions` 增加可空 `report` | `alembic downgrade -1`，删除该列 | 已执行 |
 
-升级：在 `backend/` 执行 `alembic upgrade head`。当前 head 为 `c4f8a21b9d07`。库中已有 `users`、`resumes`、`interview_sessions`、`topic_cards`、`interview_turns`。`report` 列需执行本次迁移后才存在。
+升级：在 `backend/` 执行 `alembic upgrade head`。当前 head 为 `c4f8a21b9d07`。库中已有 `users`、`resumes`、`interview_sessions`、`topic_cards`、`interview_turns`，以及 `interview_sessions.report`。
 
 种子：迁移完成后执行 `python scripts/import_topic_cards.py`。
 

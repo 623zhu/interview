@@ -1,4 +1,6 @@
-from fastapi import APIRouter, HTTPException, Request, status
+from datetime import datetime
+
+from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from app.api.deps import CurrentUser
 from app.graphs.turn_graph import (
@@ -9,17 +11,20 @@ from app.graphs.turn_graph import (
 from app.schemas.interviews import (
     InterviewSessionCreateRequest,
     InterviewSessionCreateResponse,
+    InterviewSessionGetResponse,
+    InterviewSessionListItem,
     InterviewTurnSubmitRequest,
     InterviewTurnSubmitResponse,
-    InterviewSessionGetResponse,
+    SessionStatus,
 )
 from app.service.interview_session import (
     PlanGenerationError,
     ResumeNotFoundError,
     ResumeNotReadyError,
+    SessionNotFoundError,
     create_interview_session_service,
     get_interview_session_service,
-    SessionNotFoundError,
+    list_interview_sessions_service,
 )
 from app.service.interview_turn import submit_turn_service
 
@@ -51,6 +56,29 @@ async def create_interview_session(
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="生成面试计划失败",
             )
+
+
+@router.get(
+    "",
+    status_code=status.HTTP_200_OK,
+    summary="面试场次列表",
+    description="返回当前用户的场次摘要，不含计划和各轮问答。可按状态和创建时间过滤。",
+)
+async def list_interview_sessions(
+    current_user: CurrentUser,
+    request: Request,
+    status_filter: SessionStatus | None = Query(default=None, alias="status"),
+    created_after: datetime | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=100),
+) -> list[InterviewSessionListItem]:
+    async with request.app.state.mysql_session_factory() as db:
+        return await list_interview_sessions_service(
+            user_id=current_user.id,
+            db=db,
+            status=status_filter,
+            created_after=created_after,
+            limit=limit,
+        )
 
 
 @router.post(

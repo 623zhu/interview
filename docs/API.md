@@ -32,6 +32,7 @@
 | 简历 | `POST` | `/api/v1/resumes` | 上传简历并结构化 | 已实现 |
 | 简历 | `GET` | `/api/v1/resumes` | 当前用户的简历列表 | 已实现 |
 | 面试 | `POST` | `/api/v1/interview-sessions` | 创建场次、生成计划、给出第一问 | 已实现 |
+| 面试 | `GET` | `/api/v1/interview-sessions` | 当前用户的场次列表 | 已实现 |
 | 面试 | `GET` | `/api/v1/interview-sessions/{id}` | 查询场次与问答，不返回计划 | 已实现 |
 | 面试 | `POST` | `/api/v1/interview-sessions/{id}/turns` | 提交本轮回答，返回下一问或报告 | 已实现 |
 
@@ -267,6 +268,47 @@ Authorization: Bearer <access_token>
 
 简历不存在或不属于当前用户返回 `404`。简历未就绪返回 `400`。生成计划失败返回 `500`，文案「生成面试计划失败」。`resume_id` 或 `difficulty` 不合法返回 `422`。
 
+## 面试场次列表
+
+`GET /api/v1/interview-sessions`
+
+需要认证。只返回当前用户的场次摘要，不含 `plan`、各轮问答和完整 `report`。按 `created_at` 倒序。查询参数：
+
+| 参数 | 说明 |
+| --- | --- |
+| `status` | 可选。`planned` / `in_progress` / `completed` / `abandoned` |
+| `created_after` | 可选。ISO 8601 UTC，只返回该时间及之后创建的场次 |
+| `limit` | 可选。默认 50，最大 100 |
+
+成功返回 `200`：
+
+```json
+[
+  {
+    "id": 2,
+    "resume_id": 1,
+    "target_role": "Java 后端",
+    "difficulty": "medium",
+    "status": "in_progress",
+    "created_at": "2026-10-23T08:00:00Z",
+    "score": null,
+    "current_question": "你刚才提到订单系统用了 Redis，缓存和数据库不一致怎么处理？"
+  },
+  {
+    "id": 1,
+    "resume_id": 1,
+    "target_role": "Java 后端",
+    "difficulty": "medium",
+    "status": "completed",
+    "created_at": "2026-10-20T08:00:00Z",
+    "score": 72,
+    "current_question": null
+  }
+]
+```
+
+`score` 来自场次上已写入的 `report.score`；尚未写入则为 `null`。`current_question` 仅 `in_progress` 有值。`status` 取值不合法返回 `422`。
+
 ## 查询面试场次
 
 `GET /api/v1/interview-sessions/{id}`
@@ -403,7 +445,7 @@ Authorization: Bearer <access_token>
 2. `GET /api/v1/resumes` 选择一份简历。
 3. `POST /api/v1/interview-sessions` 开始面试，拿到第一问。
 4. 循环 `POST /api/v1/interview-sessions/{id}/turns` 提交回答，直到 `status=completed`。
-5. `GET /api/v1/interview-sessions/{id}` 查看问答；结束后还可看各轮点评、分数和报告。进行中也可看每次 turns 响应里的 `current_turn`。
+5. `GET /api/v1/interview-sessions` 查看自己的场次列表；`GET /api/v1/interview-sessions/{id}` 查看某一场问答。结束后还可看各轮点评、分数和报告。进行中也可看每次 turns 响应里的 `current_turn`。
 
 每一次提交回答对应一次 `turn_graph.ainvoke`。创建场次目前走 service，语义与计划中的 `plan_graph` 相同。编排说明见 `docs/interview-design.md`。
 
@@ -411,5 +453,5 @@ Authorization: Bearer <access_token>
 
 - [ ] API 基础地址和环境地址
 - [ ] 刷新访问令牌接口
-- [ ] 面试场次列表与放弃面试
+- [ ] 放弃面试
 - [ ] 错误说明的完整文案

@@ -20,6 +20,7 @@
 - 新增面试场次表和轮次表。登录后可创建面试、提交回答。
 - 提交回答时一次 HTTP 跑完一张 `turn_graph`：评估、规则决定下一步、出下一问或报告。档案仍以 MySQL 为准，不用 LangGraph checkpointer。
 - `interview_sessions` 增加可空 `report` 列，供结束后存放总分和阶段分。当前迁移已写，业务尚未写入该列。
+- 登录后可 `GET /api/v1/interview-sessions` 查看自己的场次列表，支持按状态和创建时间过滤。结束后的总分仅在 `report` 已写入时返回。
 
 ### Changed
 

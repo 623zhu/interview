@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import random
+from datetime import datetime, timezone
 from typing import Any
 
 from openai import AsyncOpenAI
@@ -19,11 +20,13 @@ from app.schemas.interviews import (
     Difficulty,
     InterviewPlan,
     InterviewProgress,
-    InterviewSessionCreateResponse,
-    InterviewStage,
-    InterviewSessionGetResponse,
     InterviewReport,
+    InterviewSessionCreateResponse,
+    InterviewSessionGetResponse,
+    InterviewSessionListItem,
+    InterviewStage,
     InterviewTurnPublic,
+    SessionStatus,
     TurnEvaluation,
 )
 from app.schemas.resumes import ResumeProfile
@@ -516,3 +519,67 @@ async def get_interview_session_service(
         current_question=None if completed else (pending.question if pending else None),
         report=_session_report(plan, turns) if completed else None,
     )
+
+
+def _naive_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def _score_from_report(raw: dict | None) -> int | None:
+    if not raw:
+        return None
+    try:
+        return InterviewReport.model_validate(raw).score
+    except Exception:
+        return None
+
+
+async def list_interview_sessions_service(
+    *,
+    user_id: int,
+    db: AsyncSession,
+    status: SessionStatus | None = None,
+    created_after: datetime | None = None,
+    limit: int = 50,
+) -> list[InterviewSessionListItem]:
+    stmt = select(InterviewSession).where(InterviewSession.user_id == user_id)
+    if status is not None:
+        stmt = stmt.where(InterviewSession.status == status)
+    if created_after is not None:
+        stmt = stmt.where(InterviewSession.created_at >= _naive_utc(created_after))
+    stmt = stmt.order_by(
+        InterviewSession.created_at.desc(),
+        InterviewSession.id.desc(),
+    ).limit(limit)
+    rows = list((await db.execute(stmt)).scalars().all())
+
+    pending_by_session: dict[int, str] = {}
+    in_progress_ids = [row.id for row in rows if row.status == "in_progress"]
+    if in_progress_ids:
+        pending_result = await db.execute(
+            select(InterviewTurn.session_id, InterviewTurn.question).where(
+                InterviewTurn.session_id.in_(in_progress_ids),
+                InterviewTurn.answer == "",
+            )
+        )
+        pending_by_session = {
+            session_id: question for session_id, question in pending_result.all()
+        }
+
+    return [
+        InterviewSessionListItem(
+            id=row.id,
+            resume_id=row.resume_id,
+            target_role=row.target_role,
+            difficulty=row.difficulty,
+            status=row.status,
+            created_at=row.created_at,
+            score=_score_from_report(row.report),
+            current_question=(
+                pending_by_session.get(row.id) if row.status == "in_progress" else None
+            ),
+        )
+        for row in rows
+    ]

@@ -107,3 +107,14 @@ class InterviewSessionGetResponse(BaseModel):
     turns: list[InterviewTurnPublic]
     current_question: str | None
     report: InterviewReport | None = None
+
+
+class InterviewSessionListItem(BaseModel):
+    id: int
+    resume_id: int
+    target_role: str
+    difficulty: str
+    status: str
+    created_at: datetime
+    score: int | None = None
+    current_question: str | None = None
