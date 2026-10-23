@@ -102,6 +102,7 @@
 | `resume_snapshot` | `JSON` | 是 | 无 | 开场时的 `ResumeProfile` 拷贝，后续改简历不影响本场 |  |
 | `plan` | `JSON` | 是 | 无 | `InterviewPlan`，用户接口不返回 |  |
 | `progress` | `JSON` | 是 | 无 | 当前阶段和下标，见下方 |  |
+| `report` | `JSON` | 否 | 空 | 结束报告。`NULL` 表示尚未结束，或结束时尚未写入。形状见下方 |  |
 | `created_at` | `DATETIME(6)` | 是 | 无 | 创建时间，由应用写入 UTC |  |
 | `updated_at` | `DATETIME(6)` | 是 | 无 | 更新时间，由应用写入 UTC |  |
 
@@ -125,6 +126,22 @@
   "turn_in_stage": 1,
   "consecutive_misses": 0,
   "used_card_keys": ["mysql-index-leftmost"]
+}
+```
+
+`report`（结束后写入，当前业务代码尚未写入）：
+
+```json
+{
+  "score": 72,
+  "stages": [
+    { "kind": "project_probe", "score": 80 },
+    { "kind": "fundamentals", "score": 65 },
+    { "kind": "scenario", "score": 70 }
+  ],
+  "covered": ["intro", "p1"],
+  "missing": ["p2"],
+  "said_dont_know_count": 0
 }
 ```
 
@@ -210,8 +227,9 @@ erDiagram
 | `3f212b686956` | 2026-10-20 | 创建 `interview_sessions` 表 | `alembic downgrade -1`，删除 `interview_sessions` | 已执行 |
 | `a41683e0a265` | 2026-10-20 | 创建 `topic_cards` 表 | `alembic downgrade -1`，删除 `topic_cards` | 已执行 |
 | `1ce649d360ab` | 2026-10-21 | 创建 `interview_turns` 表 | `alembic downgrade -1`，删除 `interview_turns` | 已执行 |
+| `c4f8a21b9d07` | 2026-10-23 | `interview_sessions` 增加可空 `report` | `alembic downgrade -1`，删除该列 | 待执行 |
 
-升级：在 `backend/` 执行 `alembic upgrade head`。当前 head 为 `1ce649d360ab`。库中已有 `users`、`resumes`、`interview_sessions`、`topic_cards`、`interview_turns`。
+升级：在 `backend/` 执行 `alembic upgrade head`。当前 head 为 `c4f8a21b9d07`。库中已有 `users`、`resumes`、`interview_sessions`、`topic_cards`、`interview_turns`。`report` 列需执行本次迁移后才存在。
 
 种子：迁移完成后执行 `python scripts/import_topic_cards.py`。
 

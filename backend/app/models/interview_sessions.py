@@ -22,3 +22,4 @@ class InterviewSession(TimestampMixin,Base):
     resume_snapshot:Mapped[dict] = mapped_column(JSON, nullable=False)
     plan:Mapped[dict] = mapped_column(JSON, nullable=False)
     progress:Mapped[dict] = mapped_column(JSON, nullable=False)
+    report:Mapped[dict | None] = mapped_column(JSON, nullable=True)
