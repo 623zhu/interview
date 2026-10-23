@@ -34,6 +34,7 @@
 | 面试 | `POST` | `/api/v1/interview-sessions` | 创建场次、生成计划、给出第一问 | 已实现 |
 | 面试 | `GET` | `/api/v1/interview-sessions` | 当前用户的场次列表 | 已实现 |
 | 面试 | `GET` | `/api/v1/interview-sessions/{id}` | 查询场次与问答，不返回计划 | 已实现 |
+| 面试 | `PATCH` | `/api/v1/interview-sessions/{id}` | 放弃进行中的场次 | 已实现 |
 | 面试 | `POST` | `/api/v1/interview-sessions/{id}/turns` | 提交本轮回答，返回下一问或报告 | 已实现 |
 
 考点卡没有对外接口，用导入脚本写入。
@@ -373,7 +374,38 @@ Authorization: Bearer <access_token>
 }
 ```
 
-`current_question` 为当前等待回答的问题；已结束时为 `null`。`report` 仅在 `status=completed` 时有值。场次不存在或不属于当前用户返回 `404`。
+`current_question` 为当前等待回答的问题；`completed` 或 `abandoned` 时为 `null`。`report` 仅在 `status=completed` 时有值。放弃的场次保留已答轮次，不带点评和报告。场次不存在或不属于当前用户返回 `404`。
+
+## 放弃面试场次
+
+`PATCH /api/v1/interview-sessions/{id}`
+
+需要认证。将当前用户进行中的场次标为 `abandoned`，中途结束。不生成 `report`，不删除已有轮次。之后不能再提交回答。
+
+请求体：
+
+```json
+{
+  "status": "abandoned"
+}
+```
+
+成功返回 `200`：
+
+```json
+{
+  "id": 2,
+  "resume_id": 1,
+  "target_role": "Java 后端",
+  "difficulty": "medium",
+  "status": "abandoned",
+  "created_at": "2026-10-23T08:00:00Z",
+  "score": null,
+  "current_question": null
+}
+```
+
+场次不存在或不属于当前用户返回 `404`。已完成或已放弃返回 `409`，文案「当前场次无法放弃」。`status` 不是 `abandoned` 返回 `422`。
 
 ## 提交本轮回答
 
@@ -444,7 +476,7 @@ Authorization: Bearer <access_token>
 1. `POST /api/v1/resumes` 上传简历，直到 `status=ready`。
 2. `GET /api/v1/resumes` 选择一份简历。
 3. `POST /api/v1/interview-sessions` 开始面试，拿到第一问。
-4. 循环 `POST /api/v1/interview-sessions/{id}/turns` 提交回答，直到 `status=completed`。
+4. 循环 `POST /api/v1/interview-sessions/{id}/turns` 提交回答，直到 `status=completed`。中途结束则 `PATCH /api/v1/interview-sessions/{id}`，`status` 为 `abandoned`。
 5. `GET /api/v1/interview-sessions` 查看自己的场次列表；`GET /api/v1/interview-sessions/{id}` 查看某一场问答。结束后还可看各轮点评、分数和报告。进行中也可看每次 turns 响应里的 `current_turn`。
 
 每一次提交回答对应一次 `turn_graph.ainvoke`。创建场次目前走 service，语义与计划中的 `plan_graph` 相同。编排说明见 `docs/interview-design.md`。
@@ -453,5 +485,4 @@ Authorization: Bearer <access_token>
 
 - [ ] API 基础地址和环境地址
 - [ ] 刷新访问令牌接口
-- [ ] 放弃面试
 - [ ] 错误说明的完整文案

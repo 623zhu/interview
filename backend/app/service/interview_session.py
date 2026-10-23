@@ -415,6 +415,10 @@ async def persist_session(
 class SessionNotFoundError(Exception):
     pass
 
+
+class SessionConflictError(Exception):
+    pass
+
 # 创建面试会话
 async def create_interview_session_service(
     user_id: int,
@@ -502,6 +506,7 @@ async def get_interview_session_service(
 
     pending = next((turn for turn in turns if turn.answer == ""), None)
     completed = session_row.status == "completed"
+    in_progress = session_row.status == "in_progress"
     answered = [
         _public_turn(turn, completed=completed)
         for turn in turns
@@ -516,7 +521,7 @@ async def get_interview_session_service(
         status=session_row.status,
         created_at=session_row.created_at,
         turns=answered,
-        current_question=None if completed else (pending.question if pending else None),
+        current_question=pending.question if in_progress and pending else None,
         report=_session_report(plan, turns) if completed else None,
     )
 
@@ -583,3 +588,35 @@ async def list_interview_sessions_service(
         )
         for row in rows
     ]
+
+
+async def abandon_interview_session_service(
+    *,
+    user_id: int,
+    session_id: int,
+    db: AsyncSession,
+) -> InterviewSessionListItem:
+    result = await db.execute(
+        select(InterviewSession).where(
+            InterviewSession.id == session_id,
+            InterviewSession.user_id == user_id,
+        )
+    )
+    session_row = result.scalar_one_or_none()
+    if session_row is None:
+        raise SessionNotFoundError()
+    if session_row.status != "in_progress":
+        raise SessionConflictError()
+    session_row.status = "abandoned"
+    await db.commit()
+    await db.refresh(session_row)
+    return InterviewSessionListItem(
+        id=session_row.id,
+        resume_id=session_row.resume_id,
+        target_role=session_row.target_role,
+        difficulty=session_row.difficulty,
+        status=session_row.status,
+        created_at=session_row.created_at,
+        score=_score_from_report(session_row.report),
+        current_question=None,
+    )

@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from app.api.deps import CurrentUser
 from app.graphs.turn_graph import (
-    SessionConflictError,
+    SessionConflictError as TurnSessionConflictError,
     SessionNotFoundError as TurnSessionNotFoundError,
     TurnPipelineError,
 )
@@ -13,6 +13,7 @@ from app.schemas.interviews import (
     InterviewSessionCreateResponse,
     InterviewSessionGetResponse,
     InterviewSessionListItem,
+    InterviewSessionPatchRequest,
     InterviewTurnSubmitRequest,
     InterviewTurnSubmitResponse,
     SessionStatus,
@@ -21,7 +22,9 @@ from app.service.interview_session import (
     PlanGenerationError,
     ResumeNotFoundError,
     ResumeNotReadyError,
+    SessionConflictError,
     SessionNotFoundError,
+    abandon_interview_session_service,
     create_interview_session_service,
     get_interview_session_service,
     list_interview_sessions_service,
@@ -104,7 +107,7 @@ async def submit_interview_turn(
             )
         except (TurnSessionNotFoundError, SessionNotFoundError):
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="面试场次不存在")
-        except SessionConflictError:
+        except TurnSessionConflictError:
             raise HTTPException(status.HTTP_409_CONFLICT, detail="当前场次无法作答")
         except TurnPipelineError:
             raise HTTPException(
@@ -132,4 +135,28 @@ async def get_interview_session(
             )
         except SessionNotFoundError:
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="面试场次不存在")
-        
+
+
+@router.patch(
+    "/{session_id}",
+    status_code=status.HTTP_200_OK,
+    summary="放弃面试场次",
+    description="将进行中的场次标为 abandoned，中途结束。不生成报告。",
+)
+async def abandon_interview_session(
+    session_id: int,
+    body: InterviewSessionPatchRequest,
+    current_user: CurrentUser,
+    request: Request,
+) -> InterviewSessionListItem:
+    async with request.app.state.mysql_session_factory() as db:
+        try:
+            return await abandon_interview_session_service(
+                user_id=current_user.id,
+                session_id=session_id,
+                db=db,
+            )
+        except SessionNotFoundError:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="面试场次不存在")
+        except SessionConflictError:
+            raise HTTPException(status.HTTP_409_CONFLICT, detail="当前场次无法放弃")

@@ -21,6 +21,7 @@
 - 提交回答时一次 HTTP 跑完一张 `turn_graph`：评估、规则决定下一步、出下一问或报告。档案仍以 MySQL 为准，不用 LangGraph checkpointer。
 - `interview_sessions` 增加可空 `report` 列，供结束后存放总分和阶段分。当前迁移已写，业务尚未写入该列。
 - 登录后可 `GET /api/v1/interview-sessions` 查看自己的场次列表，支持按状态和创建时间过滤。结束后的总分仅在 `report` 已写入时返回。
+- 进行中的场次可用 `PATCH /api/v1/interview-sessions/{id}` 标为 `abandoned` 中途结束。不生成报告，之后不能再作答。
 
 ### Changed
 

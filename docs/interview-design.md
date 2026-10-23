@@ -241,7 +241,7 @@ class TurnEvaluation(BaseModel):
 - 报告阶段汇总各轮评估并按阶段加权出总分，不必再把整段对话交给模型重新判断。
 - 用户接口不返回 `plan` 和各轮完整 `evaluation`。结束后的 GET 只公开闸后的 `score` 与 `comment`。
 
-状态：`planned` / `in_progress` / `completed` / `abandoned`。创建成功并给出第一问后即为 `in_progress`。
+状态：`planned` / `in_progress` / `completed` / `abandoned`。创建成功并给出第一问后即为 `in_progress`。中途退出把状态改为 `abandoned`，不写 `report`；只有正常走完 `closing` 才是 `completed`。
 
 ## 代价
 

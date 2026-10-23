@@ -118,3 +118,7 @@ class InterviewSessionListItem(BaseModel):
     created_at: datetime
     score: int | None = None
     current_question: str | None = None
+
+
+class InterviewSessionPatchRequest(BaseModel):
+    status: Literal["abandoned"]
