@@ -1,102 +1,259 @@
 <script setup lang="ts">
-import {
-  Monitor,
-  VideoCamera,
-  Document,
-  DataAnalysis,
-  Collection,
-  Setting,
-} from '@element-plus/icons-vue'
+import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import { ArrowRight } from '@element-plus/icons-vue'
+import { listInterviewSessions, type InterviewSessionListItem } from '@/api/interview'
+import { ApiError } from '@/api/http'
+import AppHeader from '@/components/AppHeader.vue'
+
+const router = useRouter()
+const loading = ref(false)
+const sessions = ref<InterviewSessionListItem[]>([])
+
+const weekdayLabels = ['日', '一', '二', '三', '四', '五', '六']
+const todayLabel = computed(() => {
+  const now = new Date()
+  return `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 · 星期${weekdayLabels[now.getDay()]}`
+})
+
+function startOfWeek(date: Date) {
+  const start = new Date(date)
+  const day = start.getDay()
+  const offset = day === 0 ? 6 : day - 1
+  start.setHours(0, 0, 0, 0)
+  start.setDate(start.getDate() - offset)
+  return start
+}
+
+const weekSessions = computed(() => {
+  const weekStart = startOfWeek(new Date()).getTime()
+  return sessions.value.filter((item) => new Date(item.created_at).getTime() >= weekStart)
+})
+
+const weekCount = computed(() => weekSessions.value.length)
+const totalCount = computed(() => sessions.value.length)
+const inProgressCount = computed(
+  () => sessions.value.filter((item) => item.status === 'in_progress').length,
+)
+const weekScore = computed(() => {
+  const scored = weekSessions.value.filter(
+    (item) => item.status === 'completed' && item.score != null,
+  )
+  if (!scored.length) return null
+  const sum = scored.reduce((total, item) => total + (item.score ?? 0), 0)
+  return Math.round(sum / scored.length)
+})
+const recentSessions = computed(() => sessions.value.slice(0, 5))
+
+const difficultyLabel: Record<string, string> = {
+  easy: '简单',
+  medium: '中等',
+  hard: '困难',
+}
+const statusLabel: Record<string, string> = {
+  planned: '待开始',
+  in_progress: '进行中',
+  completed: '已完成',
+  abandoned: '已放弃',
+}
+const statusType: Record<string, 'info' | 'warning' | 'success'> = {
+  planned: 'info',
+  in_progress: 'warning',
+  completed: 'success',
+  abandoned: 'info',
+}
+
+function formatTime(value: string) {
+  const date = new Date(value)
+  const now = new Date()
+  const sameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  if (sameDay) return `今天 ${hours}:${minutes}`
+  return `${date.getMonth() + 1}月${date.getDate()}日 ${hours}:${minutes}`
+}
+
+async function loadSessions() {
+  loading.value = true
+  try {
+    sessions.value = await listInterviewSessions()
+  } catch (error) {
+    sessions.value = []
+    ElMessage.error(error instanceof ApiError ? error.message : '加载面试记录失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(loadSessions)
 </script>
 
 <template>
-  <el-container class="layout">
-    <el-aside width="220px" class="aside">
-      <div class="logo">AI Interview</div>
-      <el-menu default-active="home">
-        <el-menu-item index="home">
-          <el-icon><Monitor /></el-icon>
-          <span>工作台</span>
-        </el-menu-item>
-        <el-menu-item index="interview">
-          <el-icon><VideoCamera /></el-icon>
-          <span>AI 模拟面试</span>
-        </el-menu-item>
-        <el-menu-item index="records">
-          <el-icon><Document /></el-icon>
-          <span>面试记录</span>
-        </el-menu-item>
-        <el-menu-item index="analysis">
-          <el-icon><DataAnalysis /></el-icon>
-          <span>能力分析</span>
-        </el-menu-item>
-        <el-menu-item index="questions">
-          <el-icon><Collection /></el-icon>
-          <span>面试题库</span>
-        </el-menu-item>
-        <el-menu-item index="settings">
-          <el-icon><Setting /></el-icon>
-          <span>设置</span>
-        </el-menu-item>
-      </el-menu>
-    </el-aside>
+  <div class="layout">
+    <AppHeader />
 
-    <el-container>
-      <el-header class="header">
-        <span>面试工作台</span>
-        <el-avatar>U</el-avatar>
-      </el-header>
+    <main v-loading="loading" class="main">
+      <div class="content">
+        <p class="date">{{ todayLabel }}</p>
+        <div class="intro">
+          <div>
+            <h1>面试工作台</h1>
+            <p>用每一次练习，看清自己离目标岗位还有多远。</p>
+          </div>
+          <el-button type="primary" :icon="ArrowRight" @click="router.push('/interview')">
+            快速开始面试
+          </el-button>
+        </div>
 
-      <el-main class="main">
         <el-row :gutter="16">
-          <el-col :span="16">
-            <el-card shadow="never">开始面试</el-card>
+          <el-col :xs="24" :sm="12" :md="6">
+            <el-card class="metric" shadow="never">
+              <div class="metric-label">本周面试</div>
+              <div class="metric-value">{{ weekCount }}<span>场</span></div>
+            </el-card>
           </el-col>
-          <el-col :span="8">
-            <el-card shadow="never">本周表现</el-card>
+          <el-col :xs="24" :sm="12" :md="6">
+            <el-card class="metric" shadow="never">
+              <div class="metric-label">累计面试</div>
+              <div class="metric-value">{{ totalCount }}<span>场</span></div>
+            </el-card>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="6">
+            <el-card class="metric" shadow="never">
+              <div class="metric-label">本周表现</div>
+              <div class="metric-value">{{ weekScore ?? '—' }}<span v-if="weekScore != null">分</span></div>
+              <p class="metric-hint">本周已完成场次的平均分</p>
+            </el-card>
+          </el-col>
+          <el-col :xs="24" :sm="12" :md="6">
+            <el-card class="metric" shadow="never">
+              <div class="metric-label">进行中</div>
+              <div class="metric-value">{{ inProgressCount }}<span>场</span></div>
+            </el-card>
           </el-col>
         </el-row>
 
-        <el-row :gutter="16" class="metrics">
-          <el-col :span="8">
-            <el-card shadow="never">本周练习</el-card>
-          </el-col>
-          <el-col :span="8">
-            <el-card shadow="never">累计面试</el-card>
-          </el-col>
-          <el-col :span="8">
-            <el-card shadow="never">能力提升</el-card>
-          </el-col>
-        </el-row>
-      </el-main>
-    </el-container>
-  </el-container>
+        <el-card class="records" shadow="never">
+          <template #header>
+            <div class="records-header">
+              <div>
+                <div>最近面试</div>
+                <p>查看最近几场练习，完整列表在面试记录里。</p>
+              </div>
+              <el-link type="primary" :underline="false" @click="router.push('/records')">
+                查看全部
+              </el-link>
+            </div>
+          </template>
+
+          <el-table v-if="recentSessions.length" :data="recentSessions" empty-text="暂无记录">
+            <el-table-column prop="target_role" label="目标岗位" min-width="140" />
+            <el-table-column label="难度" width="100">
+              <template #default="{ row }">
+                {{ difficultyLabel[row.difficulty] ?? row.difficulty }}
+              </template>
+            </el-table-column>
+            <el-table-column label="面试时间" min-width="140">
+              <template #default="{ row }">
+                {{ formatTime(row.created_at) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="110">
+              <template #default="{ row }">
+                <el-tag :type="statusType[row.status] ?? 'info'" size="small">
+                  {{ statusLabel[row.status] ?? row.status }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="得分" width="90">
+              <template #default="{ row }">
+                {{ row.score == null ? '—' : row.score }}
+              </template>
+            </el-table-column>
+          </el-table>
+
+          <el-empty v-else description="还没有面试记录">
+            <el-button type="primary" @click="router.push('/interview')">去开始第一场</el-button>
+          </el-empty>
+        </el-card>
+      </div>
+    </main>
+  </div>
 </template>
 
 <style scoped>
 .layout {
-  height: 100vh;
+  min-height: 100vh;
+  background: #eef2f6;
 }
-.aside {
-  border-right: 1px solid var(--el-border-color-light);
+.main {
+  padding: 28px 24px 48px;
 }
-.logo {
-  height: 60px;
-  display: flex;
-  align-items: center;
-  padding: 0 20px;
-  font-weight: 600;
+.content {
+  max-width: 1080px;
+  margin: 0 auto;
 }
-.header {
+.date {
+  margin: 0 0 8px;
+  color: var(--el-text-color-secondary);
+}
+.intro {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid var(--el-border-color-light);
+  gap: 16px;
+  margin-bottom: 20px;
 }
-.main {
-  background: #f5f7fa;
+.intro h1 {
+  margin: 0;
+  font-size: 26px;
 }
-.metrics {
-  margin-top: 16px;
+.intro p {
+  margin: 8px 0 0;
+  color: var(--el-text-color-secondary);
+}
+.metric {
+  margin-bottom: 16px;
+  border-radius: 12px;
+  min-height: 120px;
+}
+.metric-label {
+  color: var(--el-text-color-secondary);
+}
+.metric-value {
+  margin-top: 8px;
+  font-size: 32px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.metric-value span {
+  margin-left: 4px;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--el-text-color-secondary);
+}
+.metric-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.records {
+  border-radius: 12px;
+}
+.records-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.records-header p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--el-text-color-secondary);
 }
 </style>
