@@ -1,9 +1,14 @@
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
+const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const activeIndex = computed(() =>
+  route.path.startsWith('/interview') ? '/interview' : route.path,
+)
 
 async function onLogout() {
   await authStore.logout()
@@ -20,7 +25,7 @@ async function onLogout() {
         mode="horizontal"
         router
         :ellipsis="false"
-        :default-active="$route.path"
+        :default-active="activeIndex"
       >
         <el-menu-item index="/home">面试工作台</el-menu-item>
         <el-menu-item index="/interview">模拟面试</el-menu-item>
