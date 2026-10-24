@@ -26,6 +26,13 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  function setTokens(access:string,refresh:string) {
+    accessToken.value = access
+    refreshToken.value = refresh
+    persist()
+  }
+
+
   function clear() {
     accessToken.value = ''
     refreshToken.value = ''
@@ -53,5 +60,5 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  return { accessToken, refreshToken, login, logout, clear }
+  return { accessToken, refreshToken, login, logout, clear,setTokens}
 })

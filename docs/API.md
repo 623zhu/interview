@@ -15,7 +15,7 @@
 | 开发环境地址 | 待补充 |
 | 测试环境地址 | 待补充 |
 | 生产环境地址 | 待补充 |
-| 认证方式 | 注册、登录、发验证码、重置密码、健康检查不需要认证。其余接口使用 `Authorization: Bearer <access_token>` |
+| 认证方式 | 注册、登录、发验证码、重置密码、刷新令牌、健康检查不需要认证。其余接口使用 `Authorization: Bearer <access_token>` |
 | 时间格式 | ISO 8601 UTC |
 
 ## 接口目录
@@ -26,6 +26,7 @@
 | 用户 | `POST` | `/api/v1/users/verification-codes` | 发送注册验证码 | 已实现 |
 | 用户 | `POST` | `/api/v1/users` | 注册用户 | 已实现 |
 | 用户 | `POST` | `/api/v1/users/session` | 登录 | 已实现 |
+| 用户 | `POST` | `/api/v1/users/session/refresh` | 用刷新令牌换发新令牌 | 已实现 |
 | 用户 | `DELETE` | `/api/v1/users/session` | 退出登录 | 已实现 |
 | 用户 | `POST` | `/api/v1/users/password-reset/verification-codes` | 发送重置密码验证码 | 已实现 |
 | 用户 | `POST` | `/api/v1/users/password-reset` | 校验验证码并重置密码 | 已实现 |
@@ -47,7 +48,7 @@
 Authorization: Bearer <access_token>
 ```
 
-缺少 Token、格式不是 Bearer、签名无效、过期或用户不存在时返回 `401`，响应体 `{"detail": "Unauthorized"}`。刷新令牌存在 Redis `token:refresh:{user_id}`，同一用户新登录会覆盖旧刷新令牌。访问令牌有效期由 `JWT_ACCESS_TOKEN_EXPIRES_MINUTES` 控制，刷新令牌由 `JWT_REFRESH_TOKEN_EXPIRES_DAYS` 控制。目前没有刷新访问令牌的接口，过期后重新登录。
+缺少 Token、格式不是 Bearer、签名无效、过期或用户不存在时返回 `401`，响应体 `{"detail": "Unauthorized"}`。刷新令牌存在 Redis `token:refresh:{user_id}`，同一用户新登录或刷新成功会覆盖旧刷新令牌。访问令牌有效期由 `JWT_ACCESS_TOKEN_EXPIRES_MINUTES` 控制，刷新令牌由 `JWT_REFRESH_TOKEN_EXPIRES_DAYS` 控制。访问令牌过期后，用刷新令牌调用 `POST /api/v1/users/session/refresh` 换发新的一对令牌；刷新令牌无效或过期则重新登录。
 
 ## 健康检查
 
@@ -143,6 +144,33 @@ Authorization: Bearer <access_token>
 ```
 
 成功返回 `204`，无响应体。令牌不是刷新令牌或无法解码时返回 `401`。Redis 中已无对应令牌时仍返回 `204`。
+
+## 刷新访问令牌
+
+`POST /api/v1/users/session/refresh`
+
+不需要 `Authorization`。用当前刷新令牌换发新的访问令牌和刷新令牌。校验通过后覆盖 Redis 中的刷新令牌，旧刷新令牌立即失效。
+
+请求体：
+
+```json
+{
+  "refresh_token": "eyJ..."
+}
+```
+
+成功返回 `201`：
+
+```json
+{
+  "access_token": "eyJ...",
+  "refresh_token": "eyJ...",
+  "token_type": "Bearer",
+  "expires_in": 1800
+}
+```
+
+`expires_in` 是新访问令牌的剩余秒数。令牌无法解码、不是刷新令牌、与 Redis 中保存的不一致、已过期或用户不存在时返回 `401`，响应体 `{"detail": "无效的刷新令牌"}`。
 
 ## 发送重置密码验证码
 
@@ -469,7 +497,8 @@ Authorization: Bearer <access_token>
 2. `POST /api/v1/users` 提交邮箱、验证码和密码。
 3. `POST /api/v1/users/session` 登录，拿到访问令牌。
 4. 之后请求带 `Authorization: Bearer <access_token>`。
-5. `DELETE /api/v1/users/session` 吊销刷新令牌。
+5. 访问令牌过期后，`POST /api/v1/users/session/refresh` 用刷新令牌换新的一对令牌。
+6. `DELETE /api/v1/users/session` 吊销刷新令牌。
 
 模拟面试：
 
@@ -484,5 +513,4 @@ Authorization: Bearer <access_token>
 ## 待补充内容
 
 - [ ] API 基础地址和环境地址
-- [ ] 刷新访问令牌接口
 - [ ] 错误说明的完整文案

@@ -3,7 +3,7 @@ from app.schemas.user import (
     UserCreateRequest,UserCreateResponse,
     UserVerifyEmailRequest,UserLoginRequest,UserLoginResponse,
     ResetPasswordRequest,ResetPasswordResponse,ResetPasswordVerificationCodeRequest,
-    LogoutRequest
+    LogoutRequest,RefreshTokenRequest
 )
 
 from app.service.user import (
@@ -12,6 +12,7 @@ from app.service.user import (
     EmailVerifyCodeError,UserAlreadyExistsError,
     UserNotFoundError,InvalidPasswordError,
     InvalidTokenError,
+    refresh_token_service,
 )
 
 router = APIRouter(prefix="/api/v1/users",tags=["users"])
@@ -122,3 +123,23 @@ async def logout_user(body:LogoutRequest,request:Request):
         await logout_user_service(body.refresh_token,request.app.state.redis_client)
     except InvalidTokenError as e:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="无效的刷新令牌")
+
+@router.post(
+    "/session/refresh",
+    summary="刷新令牌",
+    description="用刷新令牌换发新的访问令牌和刷新令牌。旧刷新令牌立即失效。不需要 Authorization。",
+    status_code=status.HTTP_201_CREATED,
+
+)
+async def refresh_token(body:RefreshTokenRequest,request:Request)->UserLoginResponse:
+    async with request.app.state.mysql_session_factory() as session:
+        try:
+            issued_token = await refresh_token_service(body.refresh_token,session,request.app.state.redis_client)
+            return UserLoginResponse(
+                access_token=issued_token.access_token,
+                refresh_token=issued_token.refresh_token,
+                token_type=issued_token.token_type,
+                expires_in=int(issued_token.expires_in),
+            )
+        except InvalidTokenError as e:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,detail="无效的刷新令牌")

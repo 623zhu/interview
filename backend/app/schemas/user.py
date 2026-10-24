@@ -42,3 +42,6 @@ class ResetPasswordVerificationCodeRequest(BaseModel):
 
 class LogoutRequest(BaseModel):
     refresh_token:str=Field(...,description="刷新令牌")
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token:str=Field(...,description="刷新令牌")

@@ -11,6 +11,8 @@ export function login(email: string, password: string) {
     return request<LoginResponse>('/api/v1/users/session', {
         method:'POST',
         body:JSON.stringify({email,password}),
+        skipAuth: true,
+        skipRefresh: true,
     })
 }
 
@@ -18,6 +20,8 @@ export function logout(refreshToken: string) {
     return request<void>('/api/v1/users/session', {
         method: 'DELETE',
         body: JSON.stringify({ refresh_token: refreshToken }),
+        skipAuth: true,
+        skipRefresh: true,
     })
 }
 
@@ -36,6 +40,15 @@ export function register(email: string, password: string, verificationCode: stri
         password,
         verification_code: verificationCode,
       }),
+    })
+  }
+
+  export function refreshToken(refreshToken: string) {
+    return request<LoginResponse>('/api/v1/users/session/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ refresh_token: refreshToken }),
+      skipAuth: true,
+      skipRefresh: true,
     })
   }
 

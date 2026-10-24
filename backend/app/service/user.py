@@ -146,6 +146,30 @@ async def send_reset_password_verification_code_service(
         await redis.delete(code_key)
         raise
 
+@dataclass(frozen=True)
+class IssuedToken:
+    access_token:str
+    refresh_token:str
+    token_type:str
+    expires_in:float
+
+async def _issue_tokens(user_id:int,redis:Redis)->IssuedToken:
+    access_expires = timedelta(minutes=settings.jwt_access_token_expires_minutes)
+    refresh_expires = timedelta(days=settings.jwt_refresh_token_expires_days)
+    access_token = create_token(user_id,"access",access_expires)
+    refresh_token = create_token(user_id,"refresh",refresh_expires)
+    await redis.set(
+        f"token:refresh:{user_id}",
+        refresh_token,
+        ex=int(refresh_expires.total_seconds()),
+    )
+    return IssuedToken(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_type="Bearer",
+        expires_in=access_expires.total_seconds(),
+    )
+
 async def login_user_service(
     email:str,
     password:str,
@@ -158,28 +182,8 @@ async def login_user_service(
         raise UserNotFoundError
     if not password_hash.verify(password,user.password_hash):
         raise InvalidPasswordError
-    
-    access_expires = timedelta(minutes=settings.jwt_access_token_expires_minutes)
-    refresh_expires = timedelta(days=settings.jwt_refresh_token_expires_days)
-    access_token = create_token(user.id,"access",access_expires)
-    refresh_token = create_token(user.id,"refresh",refresh_expires)
-    await redis.set(
-        f"token:refresh:{user.id}",
-        refresh_token,
-        ex=int(refresh_expires.total_seconds()),
-    )
-    return IssuedToken(
-        access_token=access_token,
-        refresh_token=refresh_token,
-        token_type="Bearer",
-        expires_in=access_expires.total_seconds())
+    return await _issue_tokens(user.id,redis)
 
-@dataclass(frozen=True)
-class IssuedToken:
-    access_token:str
-    refresh_token:str
-    token_type:str
-    expires_in:float
 
 def create_token(user_id:int,token_type:str,expires_delta:timedelta)->str:
     now = datetime.now(timezone.utc)
@@ -210,6 +214,7 @@ async def reset_password_service(
     await session.commit()
     await redis.delete(code_key)
 
+
 async def logout_user_service(
     refresh_token:str,
     redis:Redis,
@@ -229,3 +234,28 @@ async def logout_user_service(
     if stored is None or stored != refresh_token:
         return 
     await redis.delete(key) 
+
+async def refresh_token_service(
+    refresh_token:str,
+    session:AsyncSession,
+    redis:Redis,
+)->IssuedToken:
+    try:
+        payload = jwt.decode(
+            refresh_token,
+            settings.jwt_secret,
+            algorithms=[settings.jwt_algorithm]
+        )
+    except jwt.InvalidTokenError:
+        raise InvalidTokenError
+    if payload["type"] != "refresh":
+        raise InvalidTokenError
+    user_id = int(payload["sub"])
+    stored = await redis.get(f"token:refresh:{user_id}")
+    if stored is None or stored != refresh_token:
+        raise InvalidTokenError
+    result =await session.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise InvalidTokenError
+    return await _issue_tokens(user.id,redis)
