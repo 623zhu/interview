@@ -14,6 +14,13 @@ export function login(email: string, password: string) {
     })
 }
 
+export function logout(refreshToken: string) {
+    return request<void>('/api/v1/users/session', {
+        method: 'DELETE',
+        body: JSON.stringify({ refresh_token: refreshToken }),
+    })
+}
+
 export function sendRegisterCode(email:string) {
     return request<Record<string,never>>('/api/v1/users/verification-codes',{
          method:'POST',

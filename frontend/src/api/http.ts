@@ -39,6 +39,12 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
     }
     const body = await response.json().catch(() => null)
     if (!response.ok) {
+        if (response.status === 401 && accessToken) {
+          useAuthStore().clear()
+          if (!window.location.pathname.startsWith('/login')) {
+            window.location.replace('/login')
+          }
+        }
         const detail = body?.detail
         throw new ApiError(response.status, errorMessage(detail))
     }
