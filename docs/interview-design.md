@@ -123,8 +123,10 @@ flowchart TD
 1. `status = published`
 2. `role_tags` 与岗位标签有交集（例如「Java 后端」→ `backend`、`java`；「Python 后端」→ `backend`、`python`；「AI Agent」→ `ai`）
 3. `skill_tags` 与简历 `skills` 归一化后有交集；场景卡可以只按岗位
-4. `difficulty` 不超过本场：`easy` 只用 easy，`medium` 用 easy+medium，`hard` 全开
-5. 随机打乱后最多送 8～12 张给模型
+4. 入池难度：简单场 `easy`+`medium`（不含 hard）；中等场和困难场三种都可
+5. 按配额抽样最多 12 张，某档不够用相邻档补。简单 8 easy + 4 medium；中等 3 easy + 7 medium + 2 hard；困难 2 easy + 5 medium + 5 hard
+
+策划模型从这 12 张里挑 2 张基础 + 1 张场景，并受混搭约束：简单场禁止 hard、有 easy 时 medium 最多 1 张；中等场至少 1 张 medium，hard 最多 1 张且只能放场景；困难场候选含 hard 时场景必须是 hard。某档卡片不够时不硬性失败。
 
 本场骨架由代码固定，模型只填中间阶段：
 

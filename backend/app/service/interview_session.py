@@ -35,8 +35,17 @@ from app.service.interview_score import build_interview_report, gate_evaluation
 MAX_CANDIDATE_CARDS = 12
 PLAN_RETRY = 1
 INTRO_QUESTION = "先做个一分钟自我介绍吧，可以结合你最近的项目。"
-DIFFICULTY_RANK = {"easy": 0, "medium": 1, "hard": 2}
 SCENARIO_SKILL_TAGS = {"mq", "http", "distributed"}
+DIFFICULTY_QUOTAS: dict[Difficulty, dict[str, int]] = {
+    "easy": {"easy": 8, "medium": 4, "hard": 0},
+    "medium": {"easy": 3, "medium": 7, "hard": 2},
+    "hard": {"easy": 2, "medium": 5, "hard": 5},
+}
+DIFFICULTY_FILL_ORDER: dict[Difficulty, tuple[str, ...]] = {
+    "easy": ("easy", "medium"),
+    "medium": ("medium", "easy", "hard"),
+    "hard": ("hard", "medium", "easy"),
+}
 
 GENERATE_PLAN_PROMPT = """
 你是模拟面试的出题策划。根据候选人简历快照和候选考点卡，为本场面试填写中间阶段。
@@ -67,6 +76,7 @@ JSON 形状：
 - scenario 的 key 在候选卡里，且不能与 fundamentals 重复。
 - project_probe.max_turns 取 3-5;fundamentals 取 2-3;scenario 取 3-4。
 - resume_anchor 必须是 allowed_anchors 中的一项，或为 null。
+- 遵守本场难度混搭规则。
 """
 
 
@@ -185,10 +195,103 @@ def normalize_skills(skills: list[str]) -> set[str]:
             result.add("mcp")
     return result
 
-# 根据难度等级，返回允许的难度等级集合
-def _allowed_difficulties(difficulty: Difficulty) -> set[str]:
-    cap = DIFFICULTY_RANK[difficulty]
-    return {name for name, rank in DIFFICULTY_RANK.items() if rank <= cap}
+def _eligible_difficulties(difficulty: Difficulty) -> set[str]:
+    if difficulty == "easy":
+        return {"easy", "medium"}
+    return {"easy", "medium", "hard"}
+
+
+def _plan_mix_instructions(difficulty: Difficulty, cards: list[TopicCard]) -> str:
+    pool = {card.difficulty for card in cards}
+    if difficulty == "easy":
+        extra = " fundamentals 优先 easy；三张卡里 medium 最多 1 张。" if "easy" in pool else ""
+        return f"- 本场是简单场：禁止选 hard。{extra} scenario 可以是 easy 或 medium。"
+    if difficulty == "medium":
+        lines = ["- 本场是中等场：hard 最多 1 张，若选用则放在 scenario。"]
+        if "medium" in pool:
+            lines.append("- 三张卡里至少 1 张 medium。")
+        return "\n".join(lines)
+    lines = ["- 本场是困难场：fundamentals 可用 easy 或 medium 热身。"]
+    if "hard" in pool:
+        lines.append("- 候选含 hard 时，scenario 必须选 hard。")
+    return "\n".join(lines)
+
+
+def _take_from_bucket(
+    bucket: list[TopicCard],
+    count: int,
+    picked_keys: set[str],
+) -> list[TopicCard]:
+    taken: list[TopicCard] = []
+    for card in bucket:
+        if len(taken) >= count:
+            break
+        if card.key in picked_keys:
+            continue
+        taken.append(card)
+        picked_keys.add(card.key)
+    return taken
+
+
+def _sample_by_quota(cards: list[TopicCard], difficulty: Difficulty) -> list[TopicCard]:
+    buckets: dict[str, list[TopicCard]] = {"easy": [], "medium": [], "hard": []}
+    for card in cards:
+        buckets.setdefault(card.difficulty, []).append(card)
+    for bucket in buckets.values():
+        random.shuffle(bucket)
+
+    picked: list[TopicCard] = []
+    picked_keys: set[str] = set()
+    for level, quota in DIFFICULTY_QUOTAS[difficulty].items():
+        if quota <= 0:
+            continue
+        picked.extend(_take_from_bucket(buckets.get(level, []), quota, picked_keys))
+
+    for level in DIFFICULTY_FILL_ORDER[difficulty]:
+        if len(picked) >= MAX_CANDIDATE_CARDS:
+            break
+        picked.extend(
+            _take_from_bucket(
+                buckets.get(level, []),
+                MAX_CANDIDATE_CARDS - len(picked),
+                picked_keys,
+            )
+        )
+
+    random.shuffle(picked)
+    return picked[:MAX_CANDIDATE_CARDS]
+
+
+def _assert_plan_mix(
+    difficulty: Difficulty,
+    fund_keys: list[str],
+    scenario_key: str,
+    card_difficulty: dict[str, str],
+) -> None:
+    picked = [*fund_keys, scenario_key]
+    diffs = [card_difficulty[key] for key in picked]
+    pool = set(card_difficulty.values())
+    hard_n = diffs.count("hard")
+    medium_n = diffs.count("medium")
+
+    if difficulty == "easy":
+        if hard_n:
+            raise PlanGenerationError("easy plan cannot use hard cards")
+        if medium_n > 1 and "easy" in pool:
+            raise PlanGenerationError("easy plan allows at most one medium card")
+        return
+    if difficulty == "medium":
+        if hard_n > 1:
+            raise PlanGenerationError("medium plan allows at most one hard card")
+        if hard_n == 1 and card_difficulty[scenario_key] != "hard":
+            raise PlanGenerationError("medium plan hard card must be scenario")
+        if medium_n < 1 and "medium" in pool:
+            raise PlanGenerationError("medium plan needs at least one medium card")
+        return
+    if "hard" in pool and hard_n < 1:
+        raise PlanGenerationError("hard plan needs at least one hard card")
+    if "hard" in pool and card_difficulty[scenario_key] != "hard":
+        raise PlanGenerationError("hard plan scenario should be a hard card")
 
 # 判断是否是场景题
 def _is_scenario_card(card: TopicCard) -> bool:
@@ -261,20 +364,20 @@ async def pick_cards(
 ) -> list[TopicCard]:
     result = await db.execute(select(TopicCard).where(TopicCard.status == "published"))
     published = list(result.scalars().all())
-    allowed = _allowed_difficulties(difficulty)
+    allowed = _eligible_difficulties(difficulty)
     matched = [
         card
         for card in published
         if _card_matches(card, role_tags, resume_skills, allowed)
     ]
-    random.shuffle(matched)
-    return matched[:MAX_CANDIDATE_CARDS]
+    return _sample_by_quota(matched, difficulty)
 
 # 构建面试计划
 def _build_plan(
     middle: _GeneratedMiddlePlan,
-    candidate_keys: set[str],
+    candidate_cards: list[TopicCard],
     allowed_anchors: list[str],
+    difficulty: Difficulty,
 ) -> InterviewPlan:
     fund_keys = [item.topic_card_key for item in middle.fundamentals]
     if len(set(fund_keys)) != 2:
@@ -282,9 +385,17 @@ def _build_plan(
     if middle.scenario.topic_card_key in fund_keys:
         raise PlanGenerationError("scenario key overlaps fundamentals")
 
+    card_difficulty = {card.key: card.difficulty for card in candidate_cards}
+    candidate_keys = set(card_difficulty)
     used_keys = set(fund_keys) | {middle.scenario.topic_card_key}
     if not used_keys <= candidate_keys:
         raise PlanGenerationError("plan referenced unknown topic_card_key")
+    _assert_plan_mix(
+        difficulty,
+        fund_keys,
+        middle.scenario.topic_card_key,
+        card_difficulty,
+    )
 
     if middle.fundamentals[0].max_turns not in (2, 3) or middle.fundamentals[1].max_turns not in (2, 3):
         raise PlanGenerationError("fundamentals max_turns must be 2 or 3")
@@ -359,7 +470,6 @@ async def generate_plan(
         raise PlanGenerationError("not enough topic cards")
 
     allowed_anchors = _anchors(profile)
-    candidate_keys = {card.key for card in candidate_cards}
     user_payload = {
         "target_role": target_role,
         "difficulty": difficulty,
@@ -367,13 +477,16 @@ async def generate_plan(
         "allowed_anchors": allowed_anchors,
         "candidate_cards": _candidate_payload(candidate_cards),
     }
+    system_prompt = (
+        GENERATE_PLAN_PROMPT + "\n" + _plan_mix_instructions(difficulty, candidate_cards)
+    )
     last_error: Exception | None = None
     for _ in range(PLAN_RETRY + 1):
         try:
             completion = await llm_client.chat.completions.create(
                 model=settings.llm_model_heavy,
                 messages=[
-                    {"role": "system", "content": GENERATE_PLAN_PROMPT},
+                    {"role": "system", "content": system_prompt},
                     {
                         "role": "user",
                         "content": json.dumps(user_payload, ensure_ascii=False),
@@ -385,7 +498,7 @@ async def generate_plan(
             if not raw:
                 raise PlanGenerationError("empty plan")
             middle = _GeneratedMiddlePlan.model_validate_json(raw)
-            return _build_plan(middle, candidate_keys, allowed_anchors)
+            return _build_plan(middle, candidate_cards, allowed_anchors, difficulty)
         except Exception as exc:
             last_error = exc
     raise PlanGenerationError(str(last_error) if last_error else "plan generation failed")

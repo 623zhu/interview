@@ -27,6 +27,7 @@
 ### Changed
 
 - 考点卡种子按主题拆到 `backend/data/topic_cards/`，不再使用单一的 `topic_cards.json`。导入脚本读取该目录下全部 JSON。岗位含 Python 时会打上 `python` 标签；含 Agent / LLM / 大模型 / AI 工程师时会打上 `ai`。简历技能里的 Python / Python3 归一到 `python`，LangChain / LangGraph / LLM 等归一到 `agent`，RAG / MCP 各归一到对应标签。
+- 选卡不再按本场难度盖帽。简单场以 easy 为主并掺 medium；中等场 medium 为主并掺少量 easy/hard；困难场提高 hard 占比。某档不够用相邻难度补。策划挑出的三张卡会按同样规则校验。
 - 接口成功时直接返回资源，不再使用 `code`、`message`、`data` 外壳。
 - 每轮评估增加模型给出的分数和点评。代码按深度、跑题、「不会」钳制分数后写入；结束时按项目深挖、基础、场景加权得到总分，并写入 `interview_sessions.report`。进行中不返回点评；结束后 `GET /api/v1/interview-sessions/{id}` 优先读该列，旧场次现算后补写。
 

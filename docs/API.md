@@ -275,7 +275,7 @@ Authorization: Bearer <access_token>
 }
 ```
 
-`difficulty`：`easy` / `medium` / `hard`。
+`difficulty`：`easy` / `medium` / `hard`。决定本场候选卡的难度配比（简单以 easy 为主并掺 medium，中等以 medium 为主，困难提高 hard 占比），不是只抽该档卡片。
 
 成功返回 `201`：
 
