@@ -1,0 +1,71 @@
+[
+  {
+    "key": "spring-tx-failure",
+    "name": "Spring 事务失效",
+    "summary": "自调用、非 public、异常被吃掉等常见失效原因。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "事务靠代理，同类 this.method() 不会进代理，注解不生效"},
+      {"id": "p2", "text": "默认只回滚 RuntimeException/Error，checked 异常要 rollbackFor"},
+      {"id": "p3", "text": "try-catch 把异常吃掉、方法非 public、传播行为选错都会让人以为没回滚"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "同一个类里方法 A 调带 @Transactional 的 B，为什么不回滚"},
+      {"id": "d2", "intent": "catch 了异常还想回滚应该怎么做"},
+      {"id": "d3", "intent": "你们怎么测事务真的生效，出过失效事故吗"}
+    ],
+    "pitfalls": [
+      "只在接口实现类上注解却从内部调用",
+      "多数据源时默认事务管理器绑错"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-circular-dependency",
+    "name": "循环依赖",
+    "summary": "单例 setter/字段注入能被三级缓存解开，构造器注入不行。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "三级缓存提前暴露半成品 Bean，解决单例的字段/setter 循环"},
+      {"id": "p2", "text": "构造器循环无法先创建实例，启动会失败"},
+      {"id": "p3", "text": "prototype 不帮你解循环；@Async 等代理过早暴露也有坑"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "A 依赖 B、B 依赖 A，Spring 是怎么先把对象拿出来的"},
+      {"id": "d2", "intent": "为什么换成构造器注入就挂"},
+      {"id": "d3", "intent": "你们会不会主动避免循环依赖，怎么拆"}
+    ],
+    "pitfalls": [
+      "认为任意注入方式都能解循环",
+      "用 @Lazy 掩盖设计问题却说不清原理"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-bean-lifecycle",
+    "name": "Bean 生命周期",
+    "summary": "实例化、属性填充、Aware、初始化回调、AOP 代理和销毁的顺序。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "先实例化再 populate，然后 Aware，再 @PostConstruct / InitializingBean / init-method"},
+      {"id": "p2", "text": "AOP 代理通常在初始化之后，所以构造器里看不到代理，也拿不到注入完成的依赖"},
+      {"id": "p3", "text": "销毁顺序相反：@PreDestroy、DisposableBean、destroy-method"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "@PostConstruct 和构造器里访问依赖有什么差别"},
+      {"id": "d2", "intent": "什么时候 Bean 已经是代理对象"},
+      {"id": "d3", "intent": "你们有没有在启动时做预热，放在生命周期哪一步"}
+    ],
+    "pitfalls": [
+      "在构造器里调用有事务的方法",
+      "把 BeanPostProcessor 和 init-method 顺序记反"
+    ],
+    "status": "published"
+  }
+]

@@ -110,6 +110,19 @@ def role_tags_for(target_role: str) -> list[str]:
     tags: set[str] = set()
     if "java" in text:
         tags.add("java")
+    if "python" in text:
+        tags.add("python")
+    if "agent" in text or "llm" in text:
+        tags.add("ai")
+    if (
+        text.startswith("ai")
+        or "ai工程" in text
+        or "ai应用" in text
+        or "ai开发" in text
+        or "大模型" in target_role
+        or "人工智能" in target_role
+    ):
+        tags.add("ai")
     if "backend" in text or "后端" in target_role:
         tags.add("backend")
     if not tags:
@@ -130,6 +143,23 @@ def normalize_skills(skills: list[str]) -> set[str]:
         "mysql": "mysql",
         "redis": "redis",
         "http": "http",
+        "python3": "python",
+        "cpython": "python",
+        "langchain": "agent",
+        "langgraph": "agent",
+        "langsmith": "agent",
+        "autogpt": "agent",
+        "openai": "agent",
+        "functioncalling": "agent",
+        "llm": "agent",
+        "llms": "agent",
+        "chatgpt": "agent",
+        "claude": "agent",
+        "rag": "rag",
+        "mcp": "mcp",
+        "a2a": "agent",
+        "智能体": "agent",
+        "大模型": "agent",
     }
     result: set[str] = set()
     for skill in skills:
@@ -145,6 +175,14 @@ def normalize_skills(skills: list[str]) -> set[str]:
             result.add("redis")
         if "java" in key:
             result.add("java")
+        if "python" in key:
+            result.add("python")
+        if "agent" in key or "langchain" in key or "langgraph" in key:
+            result.add("agent")
+        if "rag" in key:
+            result.add("rag")
+        if "mcp" in key:
+            result.add("mcp")
     return result
 
 # 根据难度等级，返回允许的难度等级集合

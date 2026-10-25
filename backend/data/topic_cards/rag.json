@@ -1,0 +1,232 @@
+[
+  {
+    "key": "rag-why",
+    "name": "为何需要 RAG",
+    "summary": "RAG 在生成前检索外部知识塞进 Prompt，补上知识截止、私有数据和幻觉，而不是替换 LLM。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["rag", "agent"],
+    "key_points": [
+      {"id": "p1", "text": "LLM 有知识截止、看不到公司私有数据，不确定时还会编造看似合理的错误答案"},
+      {"id": "p2", "text": "RAG 是生成前先从知识库检索相关片段，把问题和检索结果一起交给模型，让它基于事实回答"},
+      {"id": "p3", "text": "RAG 不替代 LLM：模型负责理解和生成，检索负责提供依据；没检索就是用户问题直接进模型"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "问昨天刚发布的内部框架特性，不接 RAG 会怎样"},
+      {"id": "d2", "intent": "微调把文档训进去，和 RAG 你怎么选"},
+      {"id": "d3", "intent": "你们哪些问题走 RAG，哪些直接调模型"}
+    ],
+    "pitfalls": [
+      "把 RAG 说成取代大模型",
+      "检索到了却不约束模型必须依据检索结果"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "rag-pipeline",
+    "name": "RAG 完整链路",
+    "summary": "文档解析、切块、向量化、检索、重排再生成；每一步的切法、模型和 Top-K 都是关键决策。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["rag", "agent"],
+    "key_points": [
+      {"id": "p1", "text": "离线：解析 PDF/Word/Markdown → Chunk → Embedding 写入向量库；在线：Query → 检索 → 可选 Rerank → 拼 Prompt 生成"},
+      {"id": "p2", "text": "每步都有决策：表格和 OCR、chunk 大小与 overlap、嵌入模型与语言、纯向量还是混合、Rerank 后再取 Top-N"},
+      {"id": "p3", "text": "生成阶段要写清依据检索回答、无依据不编；链路任何一环差都会表现为胡答或答非所问"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "从一篇 PDF 到用户看到答案，中间经过哪几步"},
+      {"id": "d2", "intent": "你们 chunk、embedding、Top-K 各怎么选的"},
+      {"id": "d3", "intent": "召回差和生成胡编，你怎么判断问题出在哪一段"}
+    ],
+    "pitfalls": [
+      "只会说向量检索，说不清解析和切块",
+      "把 Rerank 和检索当成同一步"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "rag-hybrid-retrieval",
+    "name": "混合检索",
+    "summary": "纯向量抓语义但砸在精确编号和术语上；与 BM25 两路召回，权重或 RRF 融合。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["rag"],
+    "key_points": [
+      {"id": "p1", "text": "纯向量靠语义相似度：精确编号（RFC 7231）、专业缩写（HPA）和专有名词容易排不上，口语近义却能命中"},
+      {"id": "p2", "text": "混合检索同时跑向量和 BM25：一路抓语义（SQL 调优≈数据库优化），一路抓精确词，再合并"},
+      {"id": "p3", "text": "融合可手调权重（如向量 0.7 + BM25 0.3）或用 RRF 按排名融合；不同 query 最佳权重差很大，生产更常 RRF"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "用户搜 RFC 7231，为什么纯向量可能搜到 HTTP 概述而不是那份文档"},
+      {"id": "d2", "intent": "向量和 BM25 的结果怎么合并，为什么不写死 7:3"},
+      {"id": "d3", "intent": "你们验证集上混合比单路提升了多少"}
+    ],
+    "pitfalls": [
+      "所有查询都只做向量检索",
+      "固定权重却从不在真实 query 上回归"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "rag-rerank",
+    "name": "检索后 Rerank",
+    "summary": "Bi-Encoder 粗筛快但不看问答交互；Cross-Encoder 精排准但贵，只对少量候选打分。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["rag"],
+    "key_points": [
+      {"id": "p1", "text": "检索是粗筛：从海量文档用向量或 BM25 快速捞 Top-20，分数是近似相关"},
+      {"id": "p2", "text": "Rerank 用 Cross-Encoder 把问题和文档拼在一起逐条打分，能看到双方交互，把真相关的顶到前面"},
+      {"id": "p3", "text": "Cross-Encoder 不能预计算、每个 pair 都要过模型，所以只能精排少量候选，例如先 K=20 再取 Top-5"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Bi-Encoder 和 Cross-Encoder 编码方式差在哪"},
+      {"id": "d2", "intent": "为什么不对百万文档直接 Rerank"},
+      {"id": "d3", "intent": "加了 Rerank 之后召回 K 和最终送进 LLM 的 N 你们怎么设"}
+    ],
+    "pitfalls": [
+      "认为向量相似度已经是精确相关性",
+      "Rerank 全库扫描把延迟打爆"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "rag-chunking",
+    "name": "Chunk 切分",
+    "summary": "切太大信息被稀释，切太碎丢失上下文；生产多用递归切分加 10%～20% overlap。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["rag"],
+    "key_points": [
+      {"id": "p1", "text": "块太大，相关句被无关内容稀释、相似度掉下去；块太小，完整论述被切开，模型看到断章"},
+      {"id": "p2", "text": "固定长度简单但可能切断句子；递归按段落/句/标点切是生产常用；语义切分更准但贵，用得少"},
+      {"id": "p3", "text": "overlap 通常为块长的 10%～20%，避免关键句落在切点。Markdown 按标题，代码按函数，FAQ 不要拆开问答对"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "chunk 从 1000 改到 500 可能发生什么"},
+      {"id": "d2", "intent": "overlap 是干什么的，设 0 会怎样"},
+      {"id": "d3", "intent": "代码库和 FAQ 你会用同一套切法吗"}
+    ],
+    "pitfalls": [
+      "所有文档一个固定 token 数一刀切",
+      "把一个问答对拆成两块分别索引"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "rag-hallucination",
+    "name": "RAG 幻觉治理",
+    "summary": "内在幻觉与检索矛盾，外在幻觉是凭空编；靠 Prompt 约束、引用、低温、对齐检查和低相似兜底。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["rag", "agent"],
+    "key_points": [
+      {"id": "p1", "text": "内在幻觉：检索里有正确数字，生成却写成另一个；外在幻觉：检索根本没有的内容被编出来"},
+      {"id": "p2", "text": "Prompt 要求只基于检索回答；生成后可用另一次模型核对每条是否有依据；强制引用 chunk 便于人工查"},
+      {"id": "p3", "text": "温度降到 0.1～0.3 减少编造；回答与检索做相似度对齐；最高分都低于阈值就说未找到，不要硬编"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "检索写准确率 91%，模型说 95%，这是哪类幻觉"},
+      {"id": "d2", "intent": "相似度全很低时你是让模型试试还是直接拒答"},
+      {"id": "d3", "intent": "引用标注在你们产品里是展示给用户还是只做内部审计"}
+    ],
+    "pitfalls": [
+      "认为接了 RAG 就不会幻觉",
+      "低相似仍让模型自由发挥"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "rag-optimize",
+    "name": "检索效果优化",
+    "summary": "按链路分段排查，再用 Query 改写、多路召回、父子块和邻块扩展补召回。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["rag"],
+    "key_points": [
+      {"id": "p1", "text": "先分段找问题：解析是否丢掉表格、chunk 是否不合理、是否未做混合检索和 Rerank、Prompt 是否未约束幻觉"},
+      {"id": "p2", "text": "Query 改写把短/糊的问题变成更好的检索句；多路召回用原句、改写、关键词、子问题分别搜再合并"},
+      {"id": "p3", "text": "Parent-Child：小块检索、大块返回上下文；或命中后再带上前后邻块。Top-K 太小漏召回，太大干扰生成，常先 20 再精排 5～10"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "用户问题很模糊，你改写、多路还是先追问"},
+      {"id": "d2", "intent": "Parent-Child 解决了切小块的什么问题"},
+      {"id": "d3", "intent": "Top-K=3 和 Top-K=20 各会踩什么坑"}
+    ],
+    "pitfalls": [
+      "一出问题就换 embedding 模型，不查解析和切块",
+      "多路召回不去重，重复块占满上下文"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "rag-latency-cost",
+    "name": "RAG 延迟与 Token 成本",
+    "summary": "推理加速、缓存、流式和压 Prompt 降延迟；裁剪检索、路由小模型和缓存控费用。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["rag"],
+    "key_points": [
+      {"id": "p1", "text": "延迟：推理服务加速、KV Cache、流式先出字、压缩 Prompt、向量索引（如 HNSW）把检索压到几十毫秒"},
+      {"id": "p2", "text": "成本：裁掉检索冗余、只留相关历史、简单问题走小模型、相同或相近 query 缓存检索甚至缓存答案"},
+      {"id": "p3", "text": "Rerank 和多路召回会加延迟与费用，要用在召回不够的查询上，而不是每条请求全开"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "用户觉得慢，你怎么判断是检索慢还是生成慢"},
+      {"id": "d2", "intent": "热点问题缓存命中后还要不要过 Rerank"},
+      {"id": "d3", "intent": "小模型和大模型怎么分流，分错了会怎样"}
+    ],
+    "pitfalls": [
+      "只优化 LLM 忽略检索和 Rerank 的耗时",
+      "为省 token 把引用上下文砍到模型看不懂"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "rag-index-update",
+    "name": "文档更新与索引",
+    "summary": "全量重建简单、增量只重嵌入变更、双写切换可零停机，按更新频率选。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["rag"],
+    "key_points": [
+      {"id": "p1", "text": "文档变了必须让对应向量失效或重算，否则检索还指向旧内容"},
+      {"id": "p2", "text": "全量重建实现简单、适合日级；增量只重新处理变更文档，适合近实时；双写新旧索引再切换，追求零停机"},
+      {"id": "p3", "text": "增量要能处理删和改：删文档要删向量，改文档要按 chunk 粒度替换，避免旧块残留"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "一篇制度今天改了，用户下午能搜到新文本吗"},
+      {"id": "d2", "intent": "增量更新漏删旧 chunk 会发生什么"},
+      {"id": "d3", "intent": "重建期间查询打哪套索引"}
+    ],
+    "pitfalls": [
+      "只插入新向量，旧 chunk 永远留在库里",
+      "高峰期全量重建把检索打挂"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "rag-scale",
+    "name": "十万用户级 RAG 架构",
+    "summary": "解析与双写索引、混合检索加精排、推理与幻觉约束、缓存监控，以及文档权限和注入防护。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["rag", "agent"],
+    "key_points": [
+      {"id": "p1", "text": "数据层：文档解析→Chunk→Embedding，向量库与 ES/BM25 双写；工程上异步摄入、失败重试，避免同步卡上传"},
+      {"id": "p2", "text": "检索用混合 + Rerank（如 Top-20 再 Top-5）；生成用独立推理服务、Prompt 模板和幻觉约束；Redis 缓存热点，监控召回和幻觉率"},
+      {"id": "p3", "text": "安全：按文档 ACL 过滤检索结果，防 Prompt 注入，输出做敏感信息过滤。不能检索到无权限的邻居租户块"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "十万用户同时问，哪一层先成为瓶颈"},
+      {"id": "d2", "intent": "A 公司文档被 B 公司问句召回，你在哪一层做隔离"},
+      {"id": "d3", "intent": "摄入积压和幻觉率上升，分别看什么指标、怎么降级"}
+    ],
+    "pitfalls": [
+      "检索不做权限过滤，只在生成后删答案",
+      "单实例向量库扛所有在线查询和摄入"
+    ],
+    "status": "published"
+  }
+]

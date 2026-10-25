@@ -1,0 +1,48 @@
+[
+  {
+    "key": "jvm-gc-basics",
+    "name": "GC 与常见收集器",
+    "summary": "分代假设、Minor/Mixed/Full GC 的差别，以及 G1 的大致工作方式。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "对象优先在年轻代分配，熬过几次 Minor GC 再进老年代"},
+      {"id": "p2", "text": "G1 按 Region 回收，Mixed GC 同时收年轻代和部分老年代 Region"},
+      {"id": "p3", "text": "STW 暂停时间和吞吐量是权衡，不是停得越短越好"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Minor GC 频繁通常说明什么"},
+      {"id": "d2", "intent": "G1 的 Mixed GC 和 Full GC 有什么区别"},
+      {"id": "d3", "intent": "你们线上看过 GC 日志或监控吗，怎么判断要调参"}
+    ],
+    "pitfalls": [
+      "把所有停顿都叫 Full GC",
+      "堆越大越好，忽略暂停时间"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-oom-diagnosis",
+    "name": "OOM 排查",
+    "summary": "堆、元空间、直接内存等不同 OOM，以及 dump 和 MAT 的排查路径。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "Heap OOM 和 Metaspace/DirectBuffer OOM 原因不同，不能都加 -Xmx"},
+      {"id": "p2", "text": "HeapDumpOnOutOfMemoryError 加上 MAT 看支配树和 GC Root"},
+      {"id": "p3", "text": "常见根因是泄漏（没关连接、无界缓存）或流量峰值，不是 GC 算法选错"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "看到 java.lang.OutOfMemoryError 后先看哪一行、先抓什么"},
+      {"id": "d2", "intent": "如何区分泄漏和单纯并发太高"},
+      {"id": "d3", "intent": "你们线上有没有处理过一次，最后改了什么"}
+    ],
+    "pitfalls": [
+      "不看类型直接加大堆",
+      "生产没开 dump，事后无法复盘"
+    ],
+    "status": "published"
+  }
+]

@@ -1,4 +1,4 @@
-"""Upsert topic cards from backend/data/topic_cards.json."""
+"""Upsert topic cards from backend/data/topic_cards/*.json."""
 
 import asyncio
 import json
@@ -15,16 +15,36 @@ from app.infrastructure.mysql import create_engine, create_mysql_session_factory
 from app.models.topic_cards import TopicCard as TopicCardRow
 from app.schemas.topic_cards import TopicCard
 
-SEED_PATH = BACKEND_DIR / "data" / "topic_cards.json"
+SEED_DIR = BACKEND_DIR / "data" / "topic_cards"
+
+
+def seed_files() -> list[Path]:
+    if not SEED_DIR.is_dir():
+        raise FileNotFoundError(f"seed directory not found: {SEED_DIR}")
+    files = sorted(path for path in SEED_DIR.glob("*.json") if path.is_file())
+    if not files:
+        raise FileNotFoundError(f"no JSON seed files in {SEED_DIR}")
+    return files
+
 
 def load_cards() -> list[TopicCard]:
-    raw = json.loads(SEED_PATH.read_text(encoding="utf-8"))
-    if not isinstance(raw, list):
-        raise ValueError("seed file must be a JSON array")
-    return [TopicCard.model_validate(item) for item in raw]
+    cards: list[TopicCard] = []
+    seen: set[str] = set()
+    for path in seed_files():
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(raw, list):
+            raise ValueError(f"{path.name} must be a JSON array")
+        for item in raw:
+            card = TopicCard.model_validate(item)
+            if card.key in seen:
+                raise ValueError(f"duplicate key {card.key!r} in {path.name}")
+            seen.add(card.key)
+            cards.append(card)
+    return cards
 
 
 async def import_cards() -> None:
+    files = seed_files()
     cards = load_cards()
     engine = create_engine(settings)
     session_factory = create_mysql_session_factory(engine)
@@ -51,7 +71,7 @@ async def import_cards() -> None:
         await session.commit()
     await engine.dispose()
     print(
-        f"imported {len(cards)} cards: "
+        f"imported {len(cards)} cards from {len(files)} files: "
         f"created={created} updated={updated} skipped={skipped}"
     )
 

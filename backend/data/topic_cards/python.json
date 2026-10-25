@@ -1,0 +1,393 @@
+[
+  {
+    "key": "python-any-all",
+    "name": "any 与 all",
+    "summary": "any 遇真即停，all 遇假即停；空可迭代对象上 any 为假、all 为空真。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "any 只要有一个真值就 True，全假或空才 False；all 全部为真才 True，碰到假值立刻 False"},
+      {"id": "p2", "text": "两者都短路：any 找到第一个真值就停，all 找到第一个假值就停，适合大数据和生成器表达式"},
+      {"id": "p3", "text": "空列表：any([]) 是 False（没有任何一个为真），all([]) 是 True（没有任何一个为假，空真）"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "any 和 all 各自什么时候返回 True"},
+      {"id": "d2", "intent": "为什么说它们有短路，用生成器时有什么好处"},
+      {"id": "d3", "intent": "any([]) 和 all([]) 分别是什么，空真是什么意思"}
+    ],
+    "pitfalls": [
+      "以为空列表上 any 和 all 都是 False",
+      "用列表推导把生成器先物化，丢掉短路收益"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-decorator",
+    "name": "装饰器",
+    "summary": "装饰器是接收函数并返回新函数的语法糖，用来在不改原函数体的前提下增强行为。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "装饰器本质是高阶函数：接收一个可调用对象，返回包装后的新函数；@deco 等价于 f = deco(f)"},
+      {"id": "p2", "text": "用途是在不改原函数代码的情况下加日志、鉴权、计时、缓存；包装函数里先做前置/后置逻辑再调用原函数"},
+      {"id": "p3", "text": "带参装饰器是三层：最外层收参数，返回真正的装饰器；应用 functools.wraps 才能保留 __name__ 和文档"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "不用 @ 语法时，装饰器等价于哪一行赋值"},
+      {"id": "d2", "intent": "写过带参数的装饰器吗，三层嵌套各层干什么"},
+      {"id": "d3", "intent": "为什么包装后函数名变了，wraps 解决什么"}
+    ],
+    "pitfalls": [
+      "把装饰器理解成注解，说它不改变调用行为",
+      "带参装饰器少写一层，运行时把参数当函数收进去"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-help-dir",
+    "name": "help 与 dir",
+    "summary": "help 看文档，dir 列属性和方法；两者都是运行时探查对象的内置工具。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "help(obj) 输出对象的文档说明，适合查函数、模块、类的用法，例如 help(print)"},
+      {"id": "p2", "text": "dir(obj) 返回属性和方法名列表，不解释含义，例如 dir(str) 能看到字符串上有哪些方法"},
+      {"id": "p3", "text": "无参 dir() 列出当前作用域名字；交互式排障时先 dir 再 help，不要靠猜私有属性"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "刚拿到一个陌生对象，help 和 dir 你先用哪个"},
+      {"id": "d2", "intent": "dir() 不传参数时看到的是什么"},
+      {"id": "d3", "intent": "项目里你还用过哪些运行时探查手段"}
+    ],
+    "pitfalls": [
+      "把 dir 的返回值当成文档或类型信息",
+      "用 dir 翻出双下划线属性当正式 API 调用"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-no-overload",
+    "name": "为何没有函数重载",
+    "summary": "动态类型下同名函数后定义覆盖前者；用默认参数、*args、**kwargs 表达多种调用形态。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "Python 没有基于参数个数或类型的函数重载，后定义的同名函数会覆盖前面的定义"},
+      {"id": "p2", "text": "默认参数、*args、**kwargs 以及函数内 isinstance 分支，已经能覆盖多种调用形态"},
+      {"id": "p3", "text": "动态类型在运行时才知道实参类型，编译期无法像 Java/C++ 那样按签名分发"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "写两个同名、参数个数不同的 def 会发生什么"},
+      {"id": "d2", "intent": "想按类型走不同逻辑，你通常怎么写"},
+      {"id": "d3", "intent": "typing.overload 是运行时重载吗"}
+    ],
+    "pitfalls": [
+      "以为 Python 能像 Java 一样靠参数列表重载",
+      "把 typing.overload 当成运行时分发"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-magic-methods",
+    "name": "魔术方法",
+    "summary": "双下划线方法由解释器在构造、打印、运算、下标和调用时自动触发，用来定制对象协议。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "魔术方法以双下划线包围，解释器在对应操作时自动调用，不必手写 dunder 名字去调"},
+      {"id": "p2", "text": "生命周期有 __new__/__init__/__del__；展示用 __str__（给人看）和 __repr__（给开发者看）"},
+      {"id": "p3", "text": "运算符是 __add__/__eq__ 等；容器协议是 __len__/__getitem__/__contains__；__call__ 让实例可调用"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "print(obj) 和交互式敲 obj 分别走哪个方法"},
+      {"id": "d2", "intent": "要实现 in 和 len，至少要实现哪些魔术方法"},
+      {"id": "d3", "intent": "__new__ 和 __init__ 谁真正创建对象"}
+    ],
+    "pitfalls": [
+      "自己去调用 __str__ 而不是用 str()/print",
+      "把 __init__ 当成创建实例的方法，忽略 __new__ 在不可变类型和单例里的作用"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-scope-legb",
+    "name": "变量作用域 LEGB",
+    "summary": "名字查找按 Local → Enclosing → Global → Built-in；赋值默认写局部，改外层要用 nonlocal/global。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "查找顺序是 LEGB：函数局部、外层函数、模块全局、内置（print/len/None 等）"},
+      {"id": "p2", "text": "函数内赋值默认创建局部变量；要改外层函数变量用 nonlocal，改模块级用 global"},
+      {"id": "p3", "text": "闭包能读 Enclosing 变量，是因为内层函数把外层名字连同函数对象一起留下来"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "函数里读一个没定义的名字，解释器按什么顺序找"},
+      {"id": "d2", "intent": "内层函数想给外层的计数器加一，为什么要 nonlocal"},
+      {"id": "d3", "intent": "for 循环里的 i 在函数结束后还能不能用，和 LEGB 是什么关系"}
+    ],
+    "pitfalls": [
+      "在函数里对全局列表做 lst = [] 却不加 global，以为改的是外面那份",
+      "把 LEGB 说成运行时作用域链可以任意往外写"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-memory",
+    "name": "内存管理与进程退出",
+    "summary": "引用计数为主、分代 GC 处理循环引用；进程退出后操作系统会收回虚拟内存，长期服务才要盯泄漏。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "CPython 以引用计数为主：有人引用 +1，引用断开 -1，到 0 立即释放"},
+      {"id": "p2", "text": "循环引用计数到不了 0，靠分代垃圾回收扫；容器对象按代数分代，老代扫得更少"},
+      {"id": "p3", "text": "退出时 intern 字符串、小整数池、C 扩展 malloc 的内存可能没收干净，但 OS 会回收进程虚拟内存；真正要防的是跑几个月的服务只增不减"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么光靠引用计数不够，循环引用会怎样"},
+      {"id": "d2", "intent": "Python 进程退出时是不是所有内存都由解释器释放"},
+      {"id": "d3", "intent": "Web 服务内存持续上涨，你先怀疑哪几类对象"}
+    ],
+    "pitfalls": [
+      "认为 Python 没有 GC，只靠引用计数",
+      "把进程退出后 OS 回收当成应用层没有泄漏"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-copy",
+    "name": "浅拷贝与深拷贝",
+    "summary": "浅拷贝只复制最外层，内层仍共享引用；深拷贝递归复制嵌套对象，两边互不影响。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "浅拷贝 copy.copy 或切片/list.copy 得到新容器，但嵌套可变对象仍是同一份引用，改内层两边都变"},
+      {"id": "p2", "text": "深拷贝 copy.deepcopy 递归复制所有层，通常互不影响；遇到自引用靠 memo 避免死循环"},
+      {"id": "p3", "text": "不可变对象（小 int、短 str）往往还是共享；真正要选拷贝策略的是 list/dict 等可变嵌套结构"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "b = a[:] 之后改 b[0][0]，a 会不会变"},
+      {"id": "d2", "intent": "什么时候必须 deepcopy，浅拷贝会埋什么坑"},
+      {"id": "d3", "intent": "对象里有文件句柄或单例，deepcopy 还合适吗"}
+    ],
+    "pitfalls": [
+      "以为切片拷贝已经切断所有嵌套引用",
+      "对整个请求上下文 deepcopy，把连接和锁也复制一份"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-closure",
+    "name": "闭包",
+    "summary": "内层函数引用了外层变量，外层返回后内层仍能访问那份环境，这就是闭包。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "闭包 = 内层函数 + 它引用的 Enclosing 变量；外层函数已经返回，那些变量仍随函数对象存活"},
+      {"id": "p2", "text": "常见用途是工厂函数、装饰器、回调里保存配置；用 __closure__ / cell_contents 能看到捕获的值"},
+      {"id": "p3", "text": "循环里做闭包要小心晚绑定：for 里创建的函数默认读到循环结束时的变量，常用默认参数 i=i 钉死"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "怎样判断一个函数是不是闭包"},
+      {"id": "d2", "intent": "装饰器和闭包是什么关系"},
+      {"id": "d3", "intent": "在 for 循环里生成一组函数，为什么打印出来都是最后一个 i"}
+    ],
+    "pitfalls": [
+      "认为外层函数返回后局部变量一定销毁",
+      "循环创建闭包却不处理晚绑定"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-execution",
+    "name": "代码执行过程",
+    "summary": "源码先编成平台无关字节码，再由 PVM 解释执行；CPython 这条路径对调用方是隐藏的。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "运行 .py 时解释器先把源码编译成字节码（可落到 .pyc），这是平台无关的中间表示，不是机器码"},
+      {"id": "p2", "text": "Python 虚拟机（PVM）逐条解释字节码，完成计算和 IO；CPython 这条解释循环在解释器内部"},
+      {"id": "p3", "text": "整体是 源码 → 字节码 → 解释执行；和 C/Java 那种提前编成机器码或 class 再 JIT 不是同一套"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "说 Python 是解释型语言，编译这一步还做不做"},
+      {"id": "d2", "intent": ".pyc 是什么，删了它程序还能不能跑"},
+      {"id": "d3", "intent": "同样一段代码，CPython 和 PyPy 执行路径差在哪"}
+    ],
+    "pitfalls": [
+      "把 Python 的编译说成生成可执行机器码",
+      "认为每次运行都必然重新编译、没有字节码缓存"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-iterator-generator",
+    "name": "迭代器与生成器",
+    "summary": "迭代器实现 __iter__/__next__；生成器是用 yield 暂停的特殊迭代器，按需产出以节省内存。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "迭代器要实现 __iter__ 和 __next__，可用 iter()/next() 驱动；StopIteration 表示耗尽"},
+      {"id": "p2", "text": "生成器是特殊迭代器：函数里用 yield 产出值，每次 next 从暂停处恢复，局部状态都还在"},
+      {"id": "p3", "text": "yield 把函数变成生成器，适合大文件、流式数据，不必一次性装进内存；生成器表达式也是同一套协议"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "一个对象怎样才能用在 for 循环里"},
+      {"id": "d2", "intent": "yield 和 return 差在哪，为什么说能省内存"},
+      {"id": "d3", "intent": "生成器只能遍历一次，你在项目里踩过这个坑吗"}
+    ],
+    "pitfalls": [
+      "把列表和迭代器当成一回事，以为生成器可以反复 for",
+      "在生成器里再 return 大结果，抵消惰性求值"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-oop",
+    "name": "面向对象与四大特性",
+    "summary": "用类把数据和方法捆在一起；封装、继承、多态、抽象让调用方面向接口而不是实现。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "OOP 用类和对象组织代码；int/str 在 Python 里也是类。封装把细节藏在接口后，外部只走公开方法"},
+      {"id": "p2", "text": "继承复用父类；多态是同一方法名在不同对象上行为不同，调用方不必关心具体类型"},
+      {"id": "p3", "text": "抽象用 ABC 或约定给出模板，只暴露能做什么；具体怎么做留给子类，便于扩展"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Python 的面向对象和 Java 比，你觉得最不一样的是哪一点"},
+      {"id": "d2", "intent": "多态在你们项目里体现在哪，调用方怎么不写类型分支"},
+      {"id": "d3", "intent": "抽象类和鸭子类型你怎么选"}
+    ],
+    "pitfalls": [
+      "把四大特性背出来却说不清各自解决什么问题",
+      "认为没有 abstract 关键字 Python 就不能抽象"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-inheritance",
+    "name": "继承与 MRO",
+    "summary": "子类复用并重写父类；Python 允许多继承，方法解析顺序由 C3 MRO 决定。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "子类拿到父类属性和方法，只需重写要改的部分；isinstance 对父类为 True，子类实例也是父类实例"},
+      {"id": "p2", "text": "Python 支持多继承，灵活但会遇到同名方法冲突，解释器用 C3 线性化算出 MRO"},
+      {"id": "p3", "text": "super() 按 MRO 找下一个实现，不是“调用物理父类”；菱形继承时应用 super 而不是写死父类名"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Dog 继承 Animal 后，isinstance(dog, Animal) 为什么是 True"},
+      {"id": "d2", "intent": "两个父类有同名方法，子类调用时走哪一个"},
+      {"id": "d3", "intent": "你们项目里用过多继承或 mixin 吗，MRO 出过错没有"}
+    ],
+    "pitfalls": [
+      "把 super() 理解成永远调用直接父类",
+      "多继承里写死父类名，菱形结构下初始化跑两次或漏跑"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-encapsulation",
+    "name": "封装与名字改编",
+    "summary": "封装靠约定：单下划线是内部接口，双下划线会做名字改编，都不是 Java 那种强制私有。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "封装是把数据和操作绑在一起，外部只能走公开接口，不要直接捅内部状态"},
+      {"id": "p2", "text": "_xxx 是保护约定，外部仍能访问，靠自觉；__xxx 会改编成 _类名__xxx，用原名从外面拿不到"},
+      {"id": "p3", "text": "改编是防子类名字冲突，不是安全机制；真正要藏的用约定加 API 设计，不要指望双下划线防攻击"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "单下划线和双下划线在访问上差在哪"},
+      {"id": "d2", "intent": "obj.__value 报错后，用改编后的名字还能不能读到"},
+      {"id": "d3", "intent": "你们代码里私有属性怎么约定，有没有全用双下划线"}
+    ],
+    "pitfalls": [
+      "把 __xxx 当成 Java private，以为绝对访问不到",
+      "对外 API 使用双下划线名字，子类和测试都很难用"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-threading",
+    "name": "如何实现多线程",
+    "summary": "用 threading.Thread 传 target，或继承 Thread 重写 run；start 启动，join 等待结束。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "常用两条路：threading.Thread(target=fn, args=...) 或子类化 Thread 重写 run"},
+      {"id": "p2", "text": "生命周期是创建对象 → start 进入就绪 → 获得时间片执行 → join 等待或自行结束；直接调 run 不会开新线程"},
+      {"id": "p3", "text": "线程共享进程内存，共享可变对象要加 Lock；daemon 线程随主线程退出，资源清理不可靠"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "你通常怎么起一条工作线程，target 和继承你会选哪个"},
+      {"id": "d2", "intent": "只调用 run 而不调用 start，会发生什么"},
+      {"id": "d3", "intent": "主线程结束时子线程还在跑，你们怎么处理"}
+    ],
+    "pitfalls": [
+      "以为构造 Thread 对象就已经在跑",
+      "多线程改同一个 list/dict 却不加锁"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-thread-vs-process",
+    "name": "多线程与多进程",
+    "summary": "IO 密集用线程，CPU 密集用进程；GIL 让多线程吃不满多核，进程独立内存但通信更贵。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "多线程适合文件、网络、数据库这类 IO 等待；等待时 GIL 会释放，其它线程能跑"},
+      {"id": "p2", "text": "多进程适合计算密集：每进程独立 GIL 和内存，能吃多核，但创建贵、IPC 复杂"},
+      {"id": "p3", "text": "线程共享内存、通信便宜，但要处理线程安全；进程隔离更好，一个挂了不拖死其它，代价是序列化和管道开销"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "爬虫并发和图像处理并发，你分别用线程还是进程"},
+      {"id": "d2", "intent": "GIL 是什么，为什么说它让多线程用不好多核"},
+      {"id": "d3", "intent": "进程之间你们怎么传结果，有没有用过 Queue 或共享内存"}
+    ],
+    "pitfalls": [
+      "CPU 密集任务开一堆线程指望加速",
+      "认为多进程完全没有同步问题，共享文件或 Redis 也不用考虑"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-thread-pool",
+    "name": "线程池",
+    "summary": "预先创建一组工作线程，任务进队列被领取；做完回池复用，结果用 Future 取。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "池在启动时建好固定数量空闲线程，只占少量内存；任务提交到队列而不是每次 new Thread"},
+      {"id": "p2", "text": "空闲线程轮询队列，取到任务就执行，多个线程并发消费；结果放进 Future，调用方以后再 get"},
+      {"id": "p3", "text": "线程执行完回到池里等下一个任务，避免频繁创建销毁；Python 里对应 concurrent.futures.ThreadPoolExecutor"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么不每来一个请求就 Thread.start，而要线程池"},
+      {"id": "d2", "intent": "任务提交之后，调用方怎么拿到返回值或异常"},
+      {"id": "d3", "intent": "池的大小你们怎么定，队列堆积时怎么办"}
+    ],
+    "pitfalls": [
+      "把线程池当成可以突破 GIL 的 CPU 加速器",
+      "max_workers 开和机器核数无关的超大值，把 FD 和内存打满"
+    ],
+    "status": "published"
+  }
+]

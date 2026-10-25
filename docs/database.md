@@ -66,7 +66,7 @@
 
 ### `topic_cards`
 
-用途：保存面试考点卡。计划生成和评估读取这些卡片；出题时不把卡片原文念给用户。种子数据在 `backend/data/topic_cards.json`，用 `backend/scripts/import_topic_cards.py` 按 `key` 导入。
+用途：保存面试考点卡。计划生成和评估读取这些卡片；出题时不把卡片原文念给用户。种子按主题放在 `backend/data/topic_cards/`（如 `mysql.json`、`redis.json`、`python.json`、`agent.json`、`rag.json`），用 `backend/scripts/import_topic_cards.py` 读取该目录全部 JSON，按 `key` 导入。
 
 | 字段 | 类型 | 必填 | 默认值 | 说明 | 索引/约束 |
 | --- | --- | --- | --- | --- | --- |

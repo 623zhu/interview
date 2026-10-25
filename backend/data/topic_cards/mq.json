@@ -1,0 +1,25 @@
+[
+  {
+    "key": "mq-at-least-once",
+    "name": "消息重复消费",
+    "summary": "至少一次投递下消费者必须幂等，失败重试和死信怎么处理。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mq"],
+    "key_points": [
+      {"id": "p1", "text": "常见 MQ 是 at-least-once，重复投递是正常现象不是故障"},
+      {"id": "p2", "text": "消费者用消息 ID 或业务唯一键去重，处理成功再 ack"},
+      {"id": "p3", "text": "失败要有限重试和死信，不能无限重试把下游打挂"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么不能做成 precisely once 就结束讨论"},
+      {"id": "d2", "intent": "你们去重表怎么设计，消息体变了还算不算同一条"},
+      {"id": "d3", "intent": "消费失败进死信之后谁来修，会不会丢业务"}
+    ],
+    "pitfalls": [
+      "业务失败也 ack，等于丢消息",
+      "用 Thread.sleep 重试堵在消费者线程里"
+    ],
+    "status": "published"
+  }
+]

@@ -1,0 +1,738 @@
+[
+  {
+    "key": "redis-use-cases",
+    "name": "Redis 常见使用场景",
+    "summary": "缓存挡库、分布式锁、计数限流、ZSet 排行和轻量队列，各用什么结构。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "最核心是缓存：内存读写挡住热点，保护 MySQL；常用 String 缓存会话或查询结果"},
+      {"id": "p2", "text": "集群下用 SET NX 或 Redisson 做分布式锁；INCR/Lua 做计数和限流，避免数据库行锁"},
+      {"id": "p3", "text": "ZSet 做排行榜写入即有序；List 可做轻量队列，可靠性要求高时仍应上专业 MQ"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "你们项目里 Redis 分别承担了哪几件事"},
+      {"id": "d2", "intent": "阅读量为什么不直接 UPDATE 数据库"},
+      {"id": "d3", "intent": "用 List 当队列和用 Kafka 你怎么选"}
+    ],
+    "pitfalls": [
+      "把 Redis 当唯一数据库还关掉持久化",
+      "用 List 队列冒充可靠消息中间件"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-data-types",
+    "name": "五种基础数据类型",
+    "summary": "String、Hash、List、Set、ZSet 各自适合存什么，不要只会用 String 存 JSON。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "String 可存文本、数字、二进制，适合会话、页面缓存和 INCR 计数"},
+      {"id": "p2", "text": "Hash 适合对象字段局部更新；List 双向链表可做队列；Set 去重和集合运算"},
+      {"id": "p3", "text": "ZSet 带 score，跳表实现，适合排行榜 Top N"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "商品详情用 String 存 JSON 和用 Hash 各有什么代价"},
+      {"id": "d2", "intent": "独立访客、共同关注该用 Set 还是别的"},
+      {"id": "d3", "intent": "除了这五种，你们还用过哪种扩展类型"}
+    ],
+    "pitfalls": [
+      "所有对象都序列化成一个大 String",
+      "用 List 做排行榜再全量排序"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-clients",
+    "name": "Jedis、Lettuce 与 Redisson",
+    "summary": "同步阻塞、Netty 异步和高级封装三条路线，Spring Boot 默认 Lettuce。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "Jedis API 贴近命令，同步阻塞且连接非线程安全，必须配合连接池"},
+      {"id": "p2", "text": "Lettuce 基于 Netty，异步可共享连接，是 Spring Boot 2 默认客户端"},
+      {"id": "p3", "text": "Redisson 提供可重入锁、集合、限流等组件；简单缓存用 Lettuce，要锁和限流再上 Redisson"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "你们项目用的哪个客户端，为什么"},
+      {"id": "d2", "intent": "Jedis 为什么不能多线程共用一个连接"},
+      {"id": "d3", "intent": "只要 SET/GET 有没有必要上 Redisson"}
+    ],
+    "pitfalls": [
+      "多线程共用一个 Jedis 连接",
+      "为了用锁把全部缓存访问都换成 Redisson 重封装"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-why-fast",
+    "name": "为什么快以及为何单线程",
+    "summary": "内存、单线程加 epoll、紧凑数据结构；6.0 多线程只分担网络 IO，命令仍串行。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "数据在内存，比磁盘快数量级；命令单线程执行无锁、无切换，网络用 IO 多路复用"},
+      {"id": "p2", "text": "瓶颈通常在内存和网络而非 CPU；SDS、小 Hash 的 listpack、ZSet 跳表都为低复杂度服务"},
+      {"id": "p3", "text": "4.0 后台线程做大 key 删除和 AOF 刷盘；6.0 多线程只做网络读写，命令执行仍在主线程以保证安全"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Redis 快主要快在哪三件事"},
+      {"id": "d2", "intent": "单线程为什么能跑十万 QPS，大 key 会怎样"},
+      {"id": "d3", "intent": "6.0 多线程改了哪一段，命令会不会并行执行"}
+    ],
+    "pitfalls": [
+      "认为 6.0 之后命令也多线程并行",
+      "忽略大 key 会堵死单线程"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-sds",
+    "name": "SDS 与字符串限制",
+    "summary": "用长度头解决 C 字符串的 O(n) 和二进制问题；生产上单个 value 应远小于 512MB 上限。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "SDS 记录 len 和 alloc，取长 O(1)，可存二进制，扩容前检查剩余空间避免溢出"},
+      {"id": "p2", "text": "字符串硬上限 512MB 是保护不是目标；过大的 GET/SET 会拖垮 CPU、网络和主从，生产宜控制在几十 KB 内"},
+      {"id": "p3", "text": "短串可用 EMBSTR 让 redisObject 与 SDS 一次分配；超阈值改 RAW 分两块内存"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么不用 C 的 char* 当 Redis 字符串"},
+      {"id": "d2", "intent": "512MB 上限你真的会用满吗，超大 value 有什么害处"},
+      {"id": "d3", "intent": "EMBSTR 和 RAW 的差别，阈值大致怎么来的"}
+    ],
+    "pitfalls": [
+      "把 512MB 当成推荐大小",
+      "用一个 String 塞整篇富文本或文件"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-hash",
+    "name": "Hash 编码",
+    "summary": "小对象用 listpack 省内存，字段多或值大了切 hashtable，适合局部改对象属性。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "Hash 把多字段放在同一 key 下，改单个 field 不必覆盖整个对象，比 String 存 JSON 灵活"},
+      {"id": "p2", "text": "数据量小时用 listpack 紧凑存储，超过字段数或单值长度阈值切 hashtable，查询 O(1)"},
+      {"id": "p3", "text": "阈值默认大约 512 个字段或单值超过 64 字节，可配置"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "用户资料为什么常用 Hash 而不是一个 JSON String"},
+      {"id": "d2", "intent": "什么时候会从 listpack 升级成 hashtable"},
+      {"id": "d3", "intent": "一个 Hash 上百万 field 会怎样，该怎么拆"}
+    ],
+    "pitfalls": [
+      "一个 Hash 塞整张宽表当数据库用",
+      "和 String+JSON 混用却按字段局部更新"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-zset",
+    "name": "ZSet 与排行榜",
+    "summary": "跳表管范围，哈希表管按 member 查分；元素少时用 listpack。排行榜用 ZADD/ZREVRANGE。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "跳表按 score 有序，插入删除范围查询 O(log N)；哈希表 member→score 为 O(1)，缺一不可"},
+      {"id": "p2", "text": "元素少且短时用 listpack；个数或长度超阈值升级为跳表+哈希表"},
+      {"id": "p3", "text": "排行榜：ZADD 写入，ZINCRBY 加分，ZREVRANGE 取 Top N，ZREVRANK 查名次"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么 ZSet 要同时用跳表和哈希表"},
+      {"id": "d2", "intent": "直播贡献榜核心命令怎么写"},
+      {"id": "d3", "intent": "score 相同怎么排，同分更新会不会抖动"}
+    ],
+    "pitfalls": [
+      "只用跳表导致按 member 查分变成 O(N)",
+      "把排行榜全量拉回应用层排序"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-list",
+    "name": "List、队列与紧凑编码",
+    "summary": "List 两端进出可做队列或栈；底层 quicklist/listpack，避免超大 ziplist 连锁更新。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "LPUSH+RPOP 是队列，同端进出是栈；BLPOP/BRPOP 可阻塞等待"},
+      {"id": "p2", "text": "Ziplist 连续内存省空间，但插入可能连锁更新；Quicklist 把多个小 ziplist 串成双向链表"},
+      {"id": "p3", "text": "7.0 小 List/Hash/ZSet 多用 listpack 替代 ziplist，布局更简单、无前置长度连锁问题"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "用 List 实现队列和栈，命令分别怎么配对"},
+      {"id": "d2", "intent": "Ziplist 连锁更新是怎么发生的，Quicklist 如何缓解"},
+      {"id": "d3", "intent": "Listpack 相对 ziplist 改了什么"}
+    ],
+    "pitfalls": [
+      "一个 List 塞几百万元素当无限队列",
+      "用 LRANGE 0 -1 当遍历接口"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-vs-memcached",
+    "name": "Redis 与 Memcached",
+    "summary": "都是内存缓存；Redis 结构、持久化和集群更完整，Memcached 更单纯的 KV。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "Redis 有多种结构和 HyperLogLog/Bitmap/Geo；Memcached 基本只是字符串 KV"},
+      {"id": "p2", "text": "Redis 有 RDB/AOF；Memcached 重启即空，分片靠客户端哈希"},
+      {"id": "p3", "text": "Redis 有复制、哨兵、Cluster、Pub/Sub、Lua；Memcached 定位就是轻量缓存"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "什么场景你还会选 Memcached"},
+      {"id": "d2", "intent": "持久化和数据结构这两点怎么影响选型"},
+      {"id": "d3", "intent": "分布式能力两边分别谁来做分片"}
+    ],
+    "pitfalls": [
+      "把两者当成完全等价的缓存",
+      "用 Memcached 硬做排行榜和分布式锁"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-transaction",
+    "name": "Redis 事务",
+    "summary": "MULTI/EXEC 保证打包不被插队，但不回滚，和 MySQL ACID 不是一回事。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "MULTI 入队，EXEC 连续执行，DISCARD 丢弃；WATCH 在 EXEC 前键被改则事务作废"},
+      {"id": "p2", "text": "某条命令执行失败，其余仍继续，已执行的不会撤销"},
+      {"id": "p3", "text": "单线程带来串行隔离，但无隔离级别可选；持久性取决于 RDB/AOF，可能丢数据"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Redis 事务和 MySQL 事务差在哪"},
+      {"id": "d2", "intent": "WATCH 解决什么，和 Lua 比谁更适合扣库存"},
+      {"id": "d3", "intent": "EXEC 里第二条失败，第一条还在不在"}
+    ],
+    "pitfalls": [
+      "以为 Redis 事务失败会整体回滚",
+      "用事务代替 Lua 去做校验后删除"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-expire",
+    "name": "过期删除",
+    "summary": "惰性删除加定期采样，过期但没人访问的 key 可能暂时占着内存。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "惰性删除：访问时发现过期再删，不占额外扫描，但冷 key 会残留"},
+      {"id": "p2", "text": "定期删除：约每 100ms 抽样检查带 TTL 的 key，控制 CPU 不扫全表"},
+      {"id": "p3", "text": "过期比例高会多轮抽样；内存仍满则交给淘汰策略，不是过期策略本身"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "一个 key 过期了为什么 INFO 里内存没立刻下降"},
+      {"id": "d2", "intent": "只有惰性删除会有什么问题"},
+      {"id": "d3", "intent": "定期删除会不会把 CPU 打满，怎么限"}
+    ],
+    "pitfalls": [
+      "认为 TTL 一到内存立刻回收",
+      "把过期删除和 maxmemory 淘汰当成一回事"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-eviction",
+    "name": "内存淘汰策略",
+    "summary": "默认 noeviction 写满报错；volatile-* 只淘汰带 TTL 的，allkeys-* 面向全部 key。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "noeviction 内存满拒绝写入，是默认策略，缓存场景通常不该用这个"},
+      {"id": "p2", "text": "volatile-lru/lfu/ttl/random 只从设了过期的 key 里淘汰；allkeys-lru/lfu/random 从全部 key 里淘汰"},
+      {"id": "p3", "text": "纯缓存常用 allkeys-lru 或 allkeys-lfu；有必须常驻的配置 key 时用 volatile-* 并给可丢数据设 TTL"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "缓存 Redis 内存满了还报 OOM，可能是哪条策略"},
+      {"id": "d2", "intent": "lru 和 lfu 你怎么选"},
+      {"id": "d3", "intent": "有一部分 key 绝不能被淘汰，怎么配"}
+    ],
+    "pitfalls": [
+      "生产缓存仍用 noeviction",
+      "volatile-lru 却忘了给缓存 key 设 TTL，结果淘汰不了"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-lua",
+    "name": "Lua 脚本",
+    "summary": "整段脚本当一条命令串行执行，用来做校验删除这类多步原子操作。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "脚本在服务端一次跑完，减少 RTT，并可写条件更新等单命令做不到的逻辑"},
+      {"id": "p2", "text": "原子性来自单线程把整段当一个命令，期间不处理其他请求，不是 Lua 语言本身提供事务"},
+      {"id": "p3", "text": "释放分布式锁必须用脚本先比 value 再 DEL；脚本里不要做慢计算或访问外部系统"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "解锁为什么必须 Lua，两条命令会怎样"},
+      {"id": "d2", "intent": "Lua 的原子性和 MULTI/EXEC 有何不同"},
+      {"id": "d3", "intent": "超长 Lua 对延迟有什么影响"}
+    ],
+    "pitfalls": [
+      "在 Lua 里做复杂循环扫大量 key",
+      "把 Lua 当成 MySQL 存储过程堆业务"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-pipeline",
+    "name": "Pipeline 与 MGET/MSET",
+    "summary": "Pipeline 把多条命令一次发出省 RTT，但不原子；MGET/MSET 是单条原子命令但种类受限。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "Pipeline 客户端打包发送，RTT 从 N 次降到 1 次，命令仍逐条执行，中间可被别人插队"},
+      {"id": "p2", "text": "MGET/MSET 是服务端一条命令，天然原子，但只能批量读或批量写同一种操作"},
+      {"id": "p3", "text": "要混用 INCR、HSET 只能 Pipeline 或 Lua；要真正原子用 Lua 或事务，不要误把 Pipeline 当事务"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "一百次 GET 和一次 Pipeline 差在哪"},
+      {"id": "d2", "intent": "Pipeline 执行到一半别的客户端的 INCR 能插进来吗"},
+      {"id": "d3", "intent": "什么时候必须用 MSET 而不是 Pipeline 里多条 SET"}
+    ],
+    "pitfalls": [
+      "用 Pipeline 当原子扣库存",
+      "一次 Pipeline 塞几万条导致客户端超时"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-big-key",
+    "name": "Big Key",
+    "summary": "单 key 过大造成倾斜、阻塞和超大网络包；要拆分、压缩和限制缓存范围。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "大 key 在 Cluster 会让某 slot 实例倾斜；单线程操作耗时长会阻塞其他命令"},
+      {"id": "p2", "text": "传输占用带宽，客户端易超时；删除大 key 也要用异步或拆分删"},
+      {"id": "p3", "text": "治理：Hash/List 按维度拆开、压缩、只缓存热数据前 N 条，低频大字段回源数据库"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "怎么发现线上有大 key"},
+      {"id": "d2", "intent": "一个 Hash 一百万 field 你怎么拆"},
+      {"id": "d3", "intent": "删除大 key 直接 DEL 会怎样"}
+    ],
+    "pitfalls": [
+      "用 KEYS * 扫大 key",
+      "DEL 一个几十 MB 的 key 造成瞬时阻塞"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-hot-key",
+    "name": "热点 Key",
+    "summary": "单 key 被打爆会占满单节点；用复制打散、本地缓存和限流降级。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "热点是同一 key 被超高频访问，单线程节点 CPU 被打满，Cluster 还会流量倾斜"},
+      {"id": "p2", "text": "可把 key 复制成多份按用户取模；前面加 Caffeine 等本地缓存挡住大部分读"},
+      {"id": "p3", "text": "读多可走从节点；网关或客户端对热 key 限流降级，避免把库打穿"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "热点 key 和大 key 不是一回事，怎么区分"},
+      {"id": "d2", "intent": "商品详情被打爆，你先上本地缓存还是先拆 key"},
+      {"id": "d3", "intent": "多副本 key 更新时怎么保证不太不一致"}
+    ],
+    "pitfalls": [
+      "把热点和穿透用同一套布隆解决",
+      "本地缓存不设过期，和 Redis 长期不一致"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-cache-problems",
+    "name": "缓存穿透、击穿、雪崩",
+    "summary": "三种失效形态的原因和常用防护，不要混为一谈。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "穿透是查根本不存在的数据，缓存和库都没有；可用空值缓存或布隆过滤器"},
+      {"id": "p2", "text": "击穿是单个热点 key 过期瞬间打到库；可用互斥锁重建或逻辑过期"},
+      {"id": "p3", "text": "雪崩是大量 key 同时失效或 Redis 挂掉；TTL 加随机、多级缓存、限流降级"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "用一次故障说明三者中你遇到的是哪一种"},
+      {"id": "d2", "intent": "空值缓存的 TTL 怎么定，会有什么副作用"},
+      {"id": "d3", "intent": "Redis 宕机时接口还要不要扛，你们怎么降级"}
+    ],
+    "pitfalls": [
+      "三种问题用同一套方案",
+      "布隆过滤器误判后无法区分“没有”和“可能有”"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-cache-inconsistency",
+    "name": "缓存与数据库不一致",
+    "summary": "先更库再删缓存是常用折中；双删和 Binlog 订阅用来补并发和最终一致。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis", "mysql"],
+    "key_points": [
+      {"id": "p1", "text": "先改缓存再改库、先改库再改缓存、先删缓存再改库，在并发下都容易脏；不推荐作为主方案"},
+      {"id": "p2", "text": "常用先更新数据库再删缓存：读会回源重建；删失败要重试或消息补偿"},
+      {"id": "p3", "text": "仍可能读到旧值写回缓存，可用延迟双删或 Canal 听 Binlog 异步更新，接受短暂不一致"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么不推荐先改缓存再改库"},
+      {"id": "d2", "intent": "删除失败怎么办，谁来保证最终一致"},
+      {"id": "d3", "intent": "你们能接受多久的不一致，有没有对账"}
+    ],
+    "pitfalls": [
+      "把延迟双删当成一定正确",
+      "缓存和库双写却没有任何对账"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-persistence",
+    "name": "RDB 与 AOF",
+    "summary": "快照恢复快但窗口内会丢；AOF 更安全但文件大；bgsave 靠 fork 子进程不中断服务。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "RDB 是时间点快照，文件小、恢复快，两次快照之间的写入会丢"},
+      {"id": "p2", "text": "AOF 追加写命令，everysec 大约最多丢一秒；混合持久化在 AOF 重写里带一份 RDB 再追加增量"},
+      {"id": "p3", "text": "bgsave fork 子进程写盘，fork 瞬间可能阻塞，之后主进程继续服务；写时复制在大量脏页时会抬升内存"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Redis 重启后数据从哪来，最多会丢多少"},
+      {"id": "d2", "intent": "生成 RDB 时请求还能不能写"},
+      {"id": "d3", "intent": "你们 Redis 是纯缓存还是有必须持久的数据"}
+    ],
+    "pitfalls": [
+      "以为开了 AOF 就零丢失",
+      "把 Redis 当唯一数据库却只开 RDB"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-replication",
+    "name": "主从复制",
+    "summary": "首次全量 RDB 加缓冲，之后命令传播；断线靠 backlog 增量，溢出则再全量。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis", "distributed"],
+    "key_points": [
+      {"id": "p1", "text": "第一次 PSYNC 走全量：主节点生成 RDB 发给从节点，期间写命令进 replication buffer，快照后再补发"},
+      {"id": "p2", "text": "之后长连接异步传播写命令并心跳；2.8 后用 repl_backlog_buffer，偏移还在则增量，被覆盖则全量"},
+      {"id": "p3", "text": "延迟常见于主过载、backlog 溢出、持久化打满、从库规格差或网络；拓扑有一主多从和级联，主主几乎不用"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "从库第一次连上主库，数据怎么过去"},
+      {"id": "d2", "intent": "断线几秒和断线很久，分别会全量还是增量"},
+      {"id": "d3", "intent": "读写分离后刚写入从库读不到，你怎么处理"}
+    ],
+    "pitfalls": [
+      "认为主从是强一致同步复制",
+      "backlog 配太小导致频繁全量"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-cluster",
+    "name": "Redis Cluster",
+    "summary": "16384 槽分片、Gossip 去中心化，客户端遇 MOVED 自己改道，节点不代转发。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis", "distributed"],
+    "key_points": [
+      {"id": "p1", "text": "key 经 CRC16 后对 16384 取模落到槽，每个主节点负责一部分槽，扩容是迁移槽而不是把全部 key 重哈希"},
+      {"id": "p2", "text": "节点用 Gossip 交换槽和存活信息，无中心大脑"},
+      {"id": "p3", "text": "客户端连任一节点，key 不在本地则返回 MOVED 让客户端去目标节点，不是代理转发"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "一个 key 怎么算出该去哪个节点"},
+      {"id": "d2", "intent": "加节点时数据怎么搬，会不会像取模分片那样全盘迁移"},
+      {"id": "d3", "intent": "MOVED 和 ASK 你遇到过吗，客户端要做什么"}
+    ],
+    "pitfalls": [
+      "把 Cluster 当成代理，以为任意节点会帮你转发写",
+      "相关 key 不走 hash tag 导致无法在同一槽做多 key 操作"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-sentinel",
+    "name": "哨兵与脑裂",
+    "summary": "Sentinel 监控、选主、通知客户端；隔离旧主可能双写，要用 min-replicas 限制写入。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis", "distributed"],
+    "key_points": [
+      {"id": "p1", "text": "哨兵定期 PING，主挂了从从库选新主并通知客户端和其他从库，典型是 3 哨兵+1 主 N 从"},
+      {"id": "p2", "text": "网络分区时旧主可能仍在接受写入，恢复后降为从库并丢弃那段数据，这就是脑裂"},
+      {"id": "p3", "text": "min-replicas-to-write 和 min-replicas-max-lag 让主库在从库不足或延迟过大时拒绝写入，降低隔离旧主双写"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "哨兵干哪三件事"},
+      {"id": "d2", "intent": "主从网络断了但旧主还活着，会发生什么"},
+      {"id": "d3", "intent": "这两个 min-replicas 参数怎么配合"}
+    ],
+    "pitfalls": [
+      "只部署一个哨兵",
+      "以为哨兵能水平拆分数据"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-ha-choice",
+    "name": "哨兵与 Cluster 怎么选",
+    "summary": "哨兵只做故障转移、数据全量在每台；Cluster 同时分片和故障转移。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis", "distributed"],
+    "key_points": [
+      {"id": "p1", "text": "Sentinel 盯主从，主挂了切从；每台仍是全量数据，不能靠它扩内存容量"},
+      {"id": "p2", "text": "Cluster 按槽分片，写入可横向扩展，并内置故障检测，不必再额外部署哨兵"},
+      {"id": "p3", "text": "单机能扛、只要高可用用主从+哨兵；容量或写压力超出单机再用 Cluster"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "一句话对比哨兵和 Cluster"},
+      {"id": "d2", "intent": "缓存 8GB、QPS 不高，你上 Cluster 吗"},
+      {"id": "d3", "intent": "Cluster 下多 key 事务和跨槽操作要注意什么"}
+    ],
+    "pitfalls": [
+      "数据量很小也上 Cluster 增加运维",
+      "用哨兵解决单机内存不够"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-pubsub",
+    "name": "发布订阅",
+    "summary": "Pub/Sub 只转发不落盘，订阅者不在线消息就丢，不能当可靠 MQ。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "PUBLISH 把消息发给当前订阅该频道的客户端，Redis 不存储消息"},
+      {"id": "p2", "text": "SUBSCRIBE/UNSUBSCRIBE 订阅频道，PSUBSCRIBE 按模式订阅"},
+      {"id": "p3", "text": "离线收不到历史；要可靠投递用 Stream 或专业 MQ"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "订阅者重启期间发的消息还能不能拿到"},
+      {"id": "d2", "intent": "和 List 队列、Kafka 比，Pub/Sub 适合什么"},
+      {"id": "d3", "intent": "你们有没有用过 Stream 代替 Pub/Sub"}
+    ],
+    "pitfalls": [
+      "用 Pub/Sub 做必须到达的通知",
+      "当成广播存储去回放历史"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-distributed-lock",
+    "name": "Redis 分布式锁",
+    "summary": "SET NX EX 加锁，Lua 校验后删除；还要处理过期、误删、主从丢锁和不可重入。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "加锁用 SET key uuid EX seconds NX，过期与占位必须原子，避免只 SETNX 再 EXPIRE"},
+      {"id": "p2", "text": "解锁用 Lua：GET 等于自己的 uuid 才 DEL，防止误删别人的锁"},
+      {"id": "p3", "text": "业务超时锁先过期、主从未同步就切主、时钟漂移、不可重入都是坑；单实例故障切换时锁可能丢"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么不能先 SETNX 再 EXPIRE"},
+      {"id": "d2", "intent": "锁过期了业务还在跑，会出什么错"},
+      {"id": "d3", "intent": "主从切换时能不能接受两把锁同时存在"}
+    ],
+    "pitfalls": [
+      "del 不判断持有者",
+      "把 Redis 锁当成跨机房的强一致事务"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-redisson-lock",
+    "name": "Redisson 锁与看门狗",
+    "summary": "Hash 可重入加 Lua 原子操作，看门狗续期；Redlock 用多独立实例投票，有争议。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "加锁 Lua：无锁则建 Hash（线程标识→1）并设 TTL；同线程则计数加一；否则返回剩余 TTL"},
+      {"id": "p2", "text": "未手动设 leaseTime 时看门狗默认约每 10 秒把 TTL 重置为 30 秒；unlock 或进程挂了才停止，避免业务没完锁先过期"},
+      {"id": "p3", "text": "Redlock 向多数独立节点加锁以缓解主从丢锁，但时钟和网络分区下仍有争议，强一致应考虑 ZooKeeper/etcd"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "看门狗什么时候启动、什么时候停，客户端宕机会不会续期"},
+      {"id": "d2", "intent": "为什么用 Hash 而不是一个 String 存锁"},
+      {"id": "d3", "intent": "你们用不用 Redlock，不用的话主从丢锁怎么接受"}
+    ],
+    "pitfalls": [
+      "手动设了很短的 leaseTime 又以为看门狗会续",
+      "把 Redlock 当成已经形式化证明的银弹"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-bloom",
+    "name": "布隆过滤器",
+    "summary": "判断一定不在或可能在，适合防穿透；可用 Bitmap 自建或 RedisBloom 模块。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "k 个哈希把位数组对应位置置 1；查询全 1 只是可能存在，有一位为 0 则一定不存在"},
+      {"id": "p2", "text": "误判来自哈希冲突，不能删除（普通布隆）也不能当精确集合"},
+      {"id": "p3", "text": "可用 SETBIT 自建，或用 RedisBloom；容量和误判率要在初始化时按数据量估好"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "防缓存穿透为什么常用布隆而不是把所有 ID 放 Set"},
+      {"id": "d2", "intent": "布隆说存在，你还要不要查库"},
+      {"id": "d3", "intent": "数据删除后布隆怎么处理"}
+    ],
+    "pitfalls": [
+      "把布隆的“可能在”当成一定在",
+      "元素量远超初始化容量导致误判飙升"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-hyperloglog",
+    "name": "HyperLogLog 统计 UV",
+    "summary": "固定约 12KB 估基数，误差约 0.81%，适合海量去重计数而不是精确名单。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "PFADD 放入元素，PFCOUNT 取近似基数，PFMERGE 可合并，例如小时 UV 合成日 UV"},
+      {"id": "p2", "text": "内存几乎固定约 12KB，和一亿 ID 的 Set 几百 MB 不是一个量级"},
+      {"id": "p3", "text": "不能拿出具体用户列表，误差大约 0.81%；要精确去重仍用 Set"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "日活 UV 用 Set 和 HyperLogLog 差在哪"},
+      {"id": "d2", "intent": "误差能不能接受，什么业务不能用"},
+      {"id": "d3", "intent": "PFMERGE 用在什么报表"}
+    ],
+    "pitfalls": [
+      "用 HyperLogLog 再试图取出用户名单",
+      "对账金额这种精确场景用近似基数"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-geo",
+    "name": "Geo 地理位置",
+    "summary": "用 Geohash 把经纬度编进 ZSet，支持距离和半径搜索。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "底层是 Sorted Set，位置用 Geohash 变成 score，从而用有序集合做范围搜"},
+      {"id": "p2", "text": "GEOADD 存点，GEODIST 算距离，GEOSEARCH/GEORADIUS 按半径找附近"},
+      {"id": "p3", "text": "适合附近的人、周边门店；高精度轨迹或复杂地理围栏往往要专业 GIS"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "附近 3 公里门店，核心命令怎么写"},
+      {"id": "d2", "intent": "为什么能复用 ZSet"},
+      {"id": "d3", "intent": "精度和海量点查询有什么限制"}
+    ],
+    "pitfalls": [
+      "把 Geo 当成完整地图引擎",
+      "经纬度填反导致全盘乱距"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-scale",
+    "name": "性能到了怎么扩",
+    "summary": "先垂直和读写分离，内存或写压力不够再 Cluster，热点加本地缓存。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis", "distributed"],
+    "key_points": [
+      {"id": "p1", "text": "先看单机内存和 CPU，读多写少可一主多从把读 QPS 摊开"},
+      {"id": "p2", "text": "数据量或写请求超出单机，上 Cluster 按槽分片横向扩展"},
+      {"id": "p3", "text": "热 key 必须在应用内本地缓存挡住；只加机器不解决单 key 打满"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "CPU 打满但内存还多，你先加从库还是上 Cluster"},
+      {"id": "d2", "intent": "秒杀库存这种热 key 扩容 Cluster 有用吗"},
+      {"id": "d3", "intent": "你们现在是单机、哨兵还是 Cluster"}
+    ],
+    "pitfalls": [
+      "热点 key 不拆就加节点",
+      "读写分离却在从库做必须读到的写后读"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-fragmentation",
+    "name": "内存碎片",
+    "summary": "jemalloc 按档位分配会浪费；看 rss/used 比值，过高要整理或重启迁移。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "分配器按固定档给内存，频繁增减后出现无法复用的空洞，就是碎片"},
+      {"id": "p2", "text": "mem_fragmentation_ratio = used_memory_rss / used_memory；约 1.0～1.5 常见，长期高于 1.5 要处理"},
+      {"id": "p3", "text": "比值小于 1 可能已在用 swap，延迟会掉崖；可开 active defrag 或主从切换换实例"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "INFO memory 里哪两个值算碎片率"},
+      {"id": "d2", "intent": "碎片率 2.0 和 0.8 分别意味着什么"},
+      {"id": "d3", "intent": "你们怎么在线降碎片"}
+    ],
+    "pitfalls": [
+      "把 used_memory 增长都当成业务数据涨了",
+      "比值小于 1 还当碎片去 defrag"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-skiplist",
+    "name": "跳表原理",
+    "summary": "多层链表用索引把查找降到 O(log N)；比红黑树更好做范围扫，比 B+ 树更适合纯内存。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "底层存全部有序节点，上层是稀疏索引；查找先向右再向下，插入按概率决定层数（Redis 约 1/4 升层）"},
+      {"id": "p2", "text": "相对红黑树：实现无旋转、范围查询沿底层链表顺序走、层数可随数据量涨"},
+      {"id": "p3", "text": "B+ 树优势在少磁盘 IO，Redis 全内存用不上；B+ 的分裂合并比跳表链表操作重得多"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "请画一下在跳表里查找一个 score 的路径"},
+      {"id": "d2", "intent": "ZRANGE 为什么跳表比红黑树顺手"},
+      {"id": "d3", "intent": "MySQL 用 B+、Redis ZSet 用跳表，本质差在哪"}
+    ],
+    "pitfalls": [
+      "把跳表说成二叉树",
+      "只说平衡，不提范围查询和内存场景"
+    ],
+    "status": "published"
+  }
+]

@@ -1,0 +1,577 @@
+[
+  {
+    "key": "agent-vs-llm-api",
+    "name": "Agent 与直接调模型 API",
+    "summary": "Agent 围绕目标循环感知、决策、调工具并记忆；单次 API 只是一问一答，不会自己动手。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "Agent 是目标导向的自主系统：感知环境、拆任务、调工具、看结果、再决定下一步，不用人逐步盯着"},
+      {"id": "p2", "text": "直接调大模型 API 是单次问答，模型只吐文本，不操作外部世界，中间结果也不会改策略"},
+      {"id": "p3", "text": "核心差三点：循环执行（思考→行动→观察）、能调外部工具、有记忆；传统系统多是无状态、被动响应"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "用户说帮我订机票，直接调 API 和走 Agent 各会发生什么"},
+      {"id": "d2", "intent": "没有工具和记忆的模型为什么不算 Agent"},
+      {"id": "d3", "intent": "你们项目里哪一段必须做成 Agent，哪一段一次 Prompt 就够"}
+    ],
+    "pitfalls": [
+      "把套了 Prompt 的单次聊天当成 Agent",
+      "认为模型输出 JSON 就算执行了工具"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-core-components",
+    "name": "感知、决策、执行、记忆",
+    "summary": "感知把输入规格化，决策由 LLM 规划下一步，执行真正调工具，记忆保住跨步状态。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "感知接收自然语言、文件、图片或 API 结构化结果，转成 Agent 内部可处理的上下文"},
+      {"id": "p2", "text": "决策是大脑（LLM）：理解目标、拆计划、选下一步；执行把决策变成调工具、跑代码、查库，结果再喂回决策"},
+      {"id": "p3", "text": "短期记忆是当前对话与工具轨迹；长期记忆把偏好和经验持久化。没有记忆每一步都像失忆"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "帮我分析这份销售报表，四个组件各自干什么"},
+      {"id": "d2", "intent": "决策模块输出工具名之后，谁真正发起 HTTP 调用"},
+      {"id": "d3", "intent": "你们有没有长期记忆，存在哪、什么时候召回"}
+    ],
+    "pitfalls": [
+      "把四个组件都说成 Prompt 里的几句话，没有运行时分工",
+      "认为规划写死了就不能根据观察改计划"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-loop",
+    "name": "Agent Loop",
+    "summary": "接收输入、推理决策、执行工具、观察结果，循环直到完成或触达终止条件。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "Agent Loop 是思考→行动→观察的循环，也是和单次模型调用最根本的差别"},
+      {"id": "p2", "text": "每轮：组织上下文 → LLM 决定调工具、给最终答案或继续想 → 若调工具则执行并把结果写回上下文"},
+      {"id": "p3", "text": "任务完成、确认信息足够、或碰到最大轮次/预算/无进展，才跳出循环返回结果"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "一轮 Loop 里最少要经过哪几步"},
+      {"id": "d2", "intent": "模型决定直接回答时还要不要执行工具"},
+      {"id": "d3", "intent": "查航班没有直飞，下一轮循环会怎么改计划"}
+    ],
+    "pitfalls": [
+      "把 Loop 理解成 for 循环调几次同一个 API",
+      "没有终止条件，Loop 一直烧 token"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-tool-calling",
+    "name": "工具调用流程",
+    "summary": "模型只产出工具名和参数，应用层执行后再把真实结果喂回模型继续推理。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "先把工具清单（名字、用途、参数 schema）随 Prompt 发给模型，模型需要时输出结构化调用，自己并不执行"},
+      {"id": "p2", "text": "应用解析 JSON/Function Calling，真正调 API、跑 SQL、读文件，再把结果作为一条消息返回模型"},
+      {"id": "p3", "text": "模型拿到真实数据后继续推理：给最终答案或再调下一个工具。动态 API 调用就是这套封装成工具让模型选"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "查苹果今日股价，模型为什么不能直接编一个数字"},
+      {"id": "d2", "intent": "Function Calling、插件、代码解释器三条路各适合什么"},
+      {"id": "d3", "intent": "工具执行失败或超时，你们怎么写回给模型"}
+    ],
+    "pitfalls": [
+      "以为大模型在云端直接打了你的数据库",
+      "不校验模型填的参数就执行写操作"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-context-window",
+    "name": "上下文窗口约束",
+    "summary": "系统提示、工具定义、历史、工具结果和推理都挤在有限 token 里，决定成本、延迟和是否失忆。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "上下文窗口是一次能处理的 token 上限；Agent 要把系统提示、工具 schema、对话、工具结果、中间思考全塞进去"},
+      {"id": "p2", "text": "多轮循环每步都追加内容，二三十轮就容易顶满；窗口大也不等于能用，中间内容容易被忽略（Lost in the Middle）"},
+      {"id": "p3", "text": "token 直接决定费用和延迟，不做管理的复杂任务一次对话花数美元、响应拉到几十秒很常见"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "一次 Loop 往窗口里塞了哪几类东西"},
+      {"id": "d2", "intent": "200K 窗口为什么还不够用，Lost in the Middle 是什么"},
+      {"id": "d3", "intent": "你们怎么监控一轮任务的 token 和费用"}
+    ],
+    "pitfalls": [
+      "把上下文窗口当无限内存，工具结果原样整包塞入",
+      "认为换更大窗口就能解决工程问题"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-react",
+    "name": "ReAct",
+    "summary": "每步先 Thought 再 Action，观察结果后再想下一步，推理与行动交替，便于纠偏和追溯。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "ReAct 让模型交替输出思考和行动：先用自然语言说明为什么这么做，再调工具，把 Observation 写回上下文"},
+      {"id": "p2", "text": "纯 CoT 只会想不会做；纯 Action 直接调工具却不解释，出错难排查。ReAct 把两者绑在同一循环里"},
+      {"id": "p3", "text": "显式 Thought 形成可查 trace；观察不符合预期时下一轮 Thought 就能改方向，而不是死守开场计划"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "查公司财报时，一轮 ReAct 的 Thought、Action、Observation 各写什么"},
+      {"id": "d2", "intent": "和只开 Function Calling、不要求模型先想，差别在哪"},
+      {"id": "d3", "intent": "Thought 要不要给用户看，你们 trace 怎么存"}
+    ],
+    "pitfalls": [
+      "把 ReAct 说成先写完整计划再一次性执行",
+      "Thought 写得很长却不根据 Observation 改策略"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-mcp",
+    "name": "MCP 协议",
+    "summary": "Anthropic 提出的模型连工具标准：Host/Client/Server，把 M×N 适配变成 M+N。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent", "mcp"],
+    "key_points": [
+      {"id": "p1", "text": "MCP 统一模型和工具、数据源的连接，像 USB：工具方按协议暴露，应用按协议调用，即插即用"},
+      {"id": "p2", "text": "没有标准要写 M 个应用 × N 个工具的适配器；有了 MCP 变成每个应用一个 Client、每个工具一个 Server"},
+      {"id": "p3", "text": "Host 是用户入口并可挂多个 Client；Client 做能力协商和会话；Server 暴露 Tools、只读 Resources、提示模板 Prompts"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "MCP 到底解决了什么集成问题，不用它要写多少适配器"},
+      {"id": "d2", "intent": "Host、Client、Server 谁面对用户、谁连工具"},
+      {"id": "d3", "intent": "Tools 和 Resources 有什么差别，GitHub Server 你会暴露哪几个"}
+    ],
+    "pitfalls": [
+      "把 MCP 理解成模型厂商的 Function Calling 本身",
+      "认为 Server 会自己做任务规划"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-reflexion",
+    "name": "Reflexion 与自我纠错",
+    "summary": "一轮尝试结束后反思成败，把经验写入记忆再重试；ReAct 只往前走，不会回头审视整次执行。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "Reflexion 在任务尝试结束后做自我反思：哪里好、哪里差，把结论当经验存下来，下次带着经验避免重蹈覆辙"},
+      {"id": "p2", "text": "和 ReAct 的差别是有没有回头看：ReAct 走一步看一步；Reflexion 是走完一遍、总结、再带着总结重跑"},
+      {"id": "p3", "text": "流程是执行→评估→生成反思→写入记忆→重新尝试；代码生成上几轮反思通常就能收敛，但会成倍增加调用次数"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "用迷宫比喻，ReAct 和 Reflexion 各怎么走"},
+      {"id": "d2", "intent": "反思应该存在短期上下文还是长期记忆"},
+      {"id": "d3", "intent": "什么任务值得付 2～3 轮重试的成本，什么任务不值得"}
+    ],
+    "pitfalls": [
+      "把 Reflexion 说成 ReAct 多写一句 Thought",
+      "反思从不落盘，下一轮会话又从零开始"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-termination",
+    "name": "终止条件与防死循环",
+    "summary": "自然完成、硬性上限、重复/无进展模式检测三层刹车，避免空转烧光预算。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "自然终止：提示词写清确认任务完成或信息足够就直接给最终回答，强模型多数场景能自己停"},
+      {"id": "p2", "text": "硬性上限兜底：最大轮次、token 预算、墙钟时间，碰线就整理已有中间结果返回，不能空转"},
+      {"id": "p3", "text": "模式检测：连续多次同工具同参数、或连续若干轮无实质进展，就注入换思路提示或直接终止并告知进展"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "没有终止条件的 Agent 线上会怎样"},
+      {"id": "d2", "intent": "最大轮次你怎么定，碰线后返回什么给用户"},
+      {"id": "d3", "intent": "怎么判断它在原地打转，而不是合理的多步探索"}
+    ],
+    "pitfalls": [
+      "只靠 Prompt 说请在完成时停止，没有硬上限",
+      "上限太小导致复杂任务永远做不完"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-tool-result",
+    "name": "超大工具结果",
+    "summary": "事前限量、事中结构化截断、事后摘要，避免把上千行结果原样塞进窗口。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "事前控制最有效：查询加 LIMIT、搜索限条数、API 只取需要字段；工具 schema 要把 limit/fields 暴露给模型"},
+      {"id": "p2", "text": "事中截断发生在送入模型前：按 token 砍，或结构化保留前几条样本并附总数和统计，让模型知道全貌"},
+      {"id": "p3", "text": "事后摘要再调一次 LLM 压缩，保细节但多一次成本和延迟，适合错误日志这种丢细节会误判的结果"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "SELECT 出两千行，你在哪一层拦，不拦会怎样"},
+      {"id": "d2", "intent": "截断时为什么要带总数，只留前 10 行有什么风险"},
+      {"id": "d3", "intent": "什么结果必须摘要而不能直接砍掉"}
+    ],
+    "pitfalls": [
+      "工具返回原样 JSON dump 进上下文",
+      "截断后模型以为全集只有那几条"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-context-compression",
+    "name": "上下文压缩策略",
+    "summary": "滑动窗口、整段摘要、递进摘要和按重要性保留，在失忆、成本和细节之间取舍。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "滑动窗口只留最近 N 轮，实现便宜但会丢掉早期目标，只适合轮次相对独立的闲聊"},
+      {"id": "p2", "text": "摘要压缩用 LLM 把早期对话浓缩，能砍掉大部分 token，但多一次调用且关键细节可能在摘要里丢"},
+      {"id": "p3", "text": "递进摘要每隔几轮小压缩，衰减更平滑；选择性保留则永远留下系统提示、用户原需求和关键决策，压缩中间工具细节"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "第 2 轮说的核心需求，到第 20 轮还在不在上下文里"},
+      {"id": "d2", "intent": "摘要和滑动窗口你会怎么组合"},
+      {"id": "d3", "intent": "重要性评分用规则还是再调一次模型，代价是什么"}
+    ],
+    "pitfalls": [
+      "复杂任务只用滑动窗口，Agent 忘记原始目标",
+      "摘要把数字、约束条件弄丢还继续往下推"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-memory",
+    "name": "短期记忆与长期记忆",
+    "summary": "短期靠窗口拼接；长期用向量召回、结构化库或图谱，跨会话记住并在需要时取回。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "短期记忆就是当前窗口里的对话、工具轨迹和中间推理，访问快但容量有限，会话结束即丢失"},
+      {"id": "p2", "text": "长期记忆要先判断什么值得存：用户偏好、任务摘要、规则。向量库适合非结构化语义召回，库表/KV 适合精确档案，图谱适合多跳关系"},
+      {"id": "p3", "text": "生产常混合：结构信息走数据库，文本走向量；MemGPT 一类方案把窗口当主存、归档当外存，按需换入换出"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "用户上周说过偏好 Python，这次会话你怎么让 Agent 想起来"},
+      {"id": "d2", "intent": "日期、工号这类精确值为什么不能只靠向量检索"},
+      {"id": "d3", "intent": "什么信息你们坚决不写入长期记忆"}
+    ],
+    "pitfalls": [
+      "把整个聊天记录 Embedding 进去当长期记忆",
+      "只做存储没有检索时机，等于没记忆"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-security",
+    "name": "Agent 生产安全",
+    "summary": "防 Prompt 注入、工具越权、敏感数据带出和过度自主；权限必须做在工具层而不是只写在提示词里。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "Prompt 注入可藏在用户输入、工具返回和外部文档里，试图覆盖系统指令；要对不可信内容隔离或标注来源"},
+      {"id": "p2", "text": "工具滥用必须靠工具层硬权限（只读账号、禁止 DROP），Prompt 里写你不允许做 XX 拦不住被劫持的模型"},
+      {"id": "p3", "text": "输出要审核 PII、密钥和内部信息；高风险写操作要人确认，避免理解错意图就改生产数据"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "上传文档里藏了忽略之前指令，你们哪一层能挡住"},
+      {"id": "d2", "intent": "只读 Agent 被骗执行删除，权限应该加在哪"},
+      {"id": "d3", "intent": "回答里把手机号带出去了，你怎么做输出过滤"}
+    ],
+    "pitfalls": [
+      "把安全完全交给系统提示词",
+      "工具凭证直接暴露给模型上下文"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-tool-permission",
+    "name": "工具权限分级",
+    "summary": "按操作类型、影响范围和可逆性给最小权限；写操作、生产库和不可逆动作要确认或人工审批。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "最小权限：只给当前任务需要的能力。读查询可宽松，改数据、发消息、删文件涉及状态变更，关键操作要用户确认"},
+      {"id": "p2", "text": "影响范围分级：本地文件、内部系统和第三方、生产库不是同一风险级别，范围越大审批越严"},
+      {"id": "p3", "text": "可逆操作可放宽；删库、发邮件、转账等不可逆必须二次确认甚至人工审批"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "搜索工具和删表工具的授权流程差在哪"},
+      {"id": "d2", "intent": "同一 Agent 连开发和生产，你怎么隔离"},
+      {"id": "d3", "intent": "用户口头说删了吧，系统还要不要再确认"}
+    ],
+    "pitfalls": [
+      "一个全能工具账号既能读又能改生产",
+      "把确认弹窗做成默认同意"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-multi-orchestration",
+    "name": "多 Agent 编排模式",
+    "summary": "顺序链式、并行扇出、主从委托和群组讨论，按任务依赖和质量要求来选。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "顺序链式像流水线，前一个输出当下一个输入，适合步骤明确、有依赖的线性任务，总延迟是各步之和"},
+      {"id": "p2", "text": "并行扇出把独立子任务同时派出去再汇总，适合竞品分析这类可拆分工作，墙钟时间约等于最慢的那路"},
+      {"id": "p3", "text": "主从委托由管理者拆任务、动态改派、整合结果，适合过程不确定的复杂任务；群组讨论多角色互相质疑，适合评审和风险决策"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "写研报和同时分析五个竞品，你会选哪种编排"},
+      {"id": "d2", "intent": "主从模式里执行者失败了，管理者怎么处理"},
+      {"id": "d3", "intent": "群组讨论轮次和人数怎么定，成本怎么控"}
+    ],
+    "pitfalls": [
+      "所有任务都上多 Agent，忽略 token 放大",
+      "并行扇出却在子任务之间有隐藏依赖"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-subagent",
+    "name": "子 Agent 模式",
+    "summary": "父 Agent 拆任务、子 Agent 自带提示词和窗口执行；换来隔离和并行，也带来信息损耗和成本放大。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "子 Agent 有独立系统提示、工具集和上下文，专注一件事，往往比把生成和审查塞进同一个 Agent 更好"},
+      {"id": "p2", "text": "上下文隔离：子任务不占用父窗口；多个子 Agent 可并行改不同文件，墙钟时间下降"},
+      {"id": "p3", "text": "挑战是信息传递损耗——子 Agent 只看到父 Agent 转述的任务；以及成本：每个子循环都是独立 LLM 调用，总 token 可能翻数倍"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么代码生成和代码审查要拆成两个 Agent"},
+      {"id": "d2", "intent": "父 Agent 给子 Agent 的 brief 里必须带上哪些上下文"},
+      {"id": "d3", "intent": "什么时候不该拆子 Agent"}
+    ],
+    "pitfalls": [
+      "任务描述过短，子 Agent 在错误假设下跑完",
+      "无限制拆出一堆子 Agent 把账单打爆"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-evaluation",
+    "name": "Agent 效果评估",
+    "summary": "不只看最终答案，还要看任务是否完成、花了多少步和 token、决策是否合理、有没有越权。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "任务完成度是核心：有明确成功标准的用成败二元；开放任务用人工或 LLM-as-Judge 细打分"},
+      {"id": "p2", "text": "执行效率看轮次、token、墙钟时间；同样完成任务，5 轮 3 万 token 优于 20 轮 15 万"},
+      {"id": "p3", "text": "决策质量要审 trace：工具选对没有、参数准不准、有没有空转；安全和可靠性看是否泄密、是否危险操作、异常是否兜住"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "评估聊天机器人和评估 Agent，差在哪一层"},
+      {"id": "d2", "intent": "开放式写报告你怎么打分，谁来当 Judge"},
+      {"id": "d3", "intent": "线上你们监控哪几个 Agent 指标"}
+    ],
+    "pitfalls": [
+      "只看最终回复像不像人话",
+      "用单一 LLM Judge 打分却不抽检"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-computer-use",
+    "name": "Computer Use",
+    "summary": "用截屏/OCR 理解界面，再模拟键鼠操作电脑，把自然语言变成真实 GUI 动作。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "Computer Use 让模型通过点击、键盘输入与操作系统和软件交互，从只说话变成能操作桌面"},
+      {"id": "p2", "text": "常见路径是截屏或无障碍树理解当前界面，结合 OCR 定位按钮，再发系统级鼠标键盘事件"},
+      {"id": "p3", "text": "复杂指令会拆成规划、执行、校验多个环节；GUI 脆弱、延迟高、权限大，生产上要比 API 工具更严地沙箱和确认"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "打开浏览器搜索某个词，模型实际做了哪几步"},
+      {"id": "d2", "intent": "有现成 API 时还要不要 Computer Use"},
+      {"id": "d3", "intent": "误点了付款按钮，你们怎么防"}
+    ],
+    "pitfalls": [
+      "把 Computer Use 当成稳定的生产集成方式",
+      "在无沙箱的真实桌面上放开所有点击"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-mcp-function-calling",
+    "name": "Function Calling 与 MCP",
+    "summary": "Function Calling 是模型侧如何选工具填参数；MCP 是应用侧如何发现和连接工具，两者互补。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent", "mcp"],
+    "key_points": [
+      {"id": "p1", "text": "Function Calling 内置在模型 API：把函数定义传进去，模型在需要时生成结构化调用，解决调什么、传什么"},
+      {"id": "p2", "text": "MCP 是通信标准，解决工具怎么暴露给 AI 应用，不绑定模型，也不替模型做选择"},
+      {"id": "p3", "text": "完整系统通常两个都用：MCP 发现和连接，Function Calling（或等价工具协议）让模型决策。大脑做选择，USB 做即插即用"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "只有 Function Calling、没有 MCP，工具集成痛在哪"},
+      {"id": "d2", "intent": "MCP 会不会替模型决定调用哪个 tool"},
+      {"id": "d3", "intent": "一次天气查询，从 Host 到模型再到 Server 怎么走"}
+    ],
+    "pitfalls": [
+      "把 MCP 和 Function Calling 当成互斥方案",
+      "以为接了 MCP 就可以不把工具 schema 交给模型"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-mcp-security",
+    "name": "MCP 安全分层",
+    "summary": "用户授权、Server 沙箱隔离凭证、加密与来源校验，避免模型直接碰到密钥。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent", "mcp"],
+    "key_points": [
+      {"id": "p1", "text": "用户控制层：工具、资源和提示的访问要经 Host 授权，敏感操作弹窗确认，用户清楚数据会进模型、工具能干什么"},
+      {"id": "p2", "text": "隔离沙箱：调用封装在 Server 内，模型碰不到原始密钥；即便被注入，攻击者也拿不到数据库密码。执行环境要限制"},
+      {"id": "p3", "text": "传输验证：身份校验后才能访问；远程用 HTTPS/SSE，本地 Stdio 也要进程隔离"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "MCP Server 里的数据库密码会不会进模型上下文"},
+      {"id": "d2", "intent": "Host 弹窗拒绝后，Client 还能不能调那个工具"},
+      {"id": "d3", "intent": "你会允许来路不明的第三方 MCP Server 直连生产吗"}
+    ],
+    "pitfalls": [
+      "把 API Key 写进工具描述让模型看见",
+      "默认信任所有 MCP Server"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-mcp-migrate",
+    "name": "把应用做成 MCP Server",
+    "summary": "挑可对外能力、单独做 Server、写清工具 schema，经协议路由到原有业务，不把模型塞进业务进程。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent", "mcp"],
+    "key_points": [
+      {"id": "p1", "text": "先梳理要对 Agent 暴露的能力：查询、文件、已有 HTTP API，而不是把整个单体都打开"},
+      {"id": "p2", "text": "MCP Server 与业务服务隔离，经 HTTP/SDK 调用原系统；用官方 SDK 按协议收请求、路由、返回"},
+      {"id": "p3", "text": "工具描述（功能、入参、出参）会被模型用来决定何时调用，写含糊模型就会乱调或不敢调"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "现有订单服务要给 Agent 用，你先暴露哪些工具、哪些绝不暴露"},
+      {"id": "d2", "intent": "为什么不把 MCP 直接嵌进原业务进程"},
+      {"id": "d3", "intent": "工具描述写得很差时，模型会表现出什么"}
+    ],
+    "pitfalls": [
+      "把内部管理接口原样暴露成工具",
+      "工具描述只有函数名没有参数语义"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-a2a",
+    "name": "A2A 协议与 Agent Card",
+    "summary": "Google 的 Agent 对等协作协议：用 Agent Card 发现能力，任务异步推进，不共享内存也不暴露内部实现。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "MCP 解决 Agent 怎么用工具；A2A 解决 Agent 怎么和另一个会思考的 Agent 协作、分工、交换中间结果"},
+      {"id": "p2", "text": "Agent Card 是标准 JSON 名片（技能、输入输出、认证、端点），用于发现、匹配和按声明方式调用，对方不必知道内部实现"},
+      {"id": "p3", "text": "核心对象是 Task、Message/Part、Artifact；基于 JSON-RPC + HTTP，长任务用 SSE 或 webhook 推送。原则是当同事而非当函数、复用现有标准、默认安全、支持长任务、模态无关"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "叫外卖式的 MCP 和同事协作式的 A2A，边界在哪"},
+      {"id": "d2", "intent": "Agent Card 里没有的技能，对方能不能硬调内部函数"},
+      {"id": "d3", "intent": "一个跑几小时的研究任务，客户端怎么跟进度"}
+    ],
+    "pitfalls": [
+      "把另一个 Agent 当成 MCP Server 去列函数调",
+      "协作却要求共享内存或源码"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-framework",
+    "name": "Agent 框架与生产架构",
+    "summary": "先跑通 Loop，再抽象模型、工具、上下文和观测；上线还要网关、记忆、沙箱和安全四件套。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "框架骨架是 Loop 引擎：推理→行动→观察，带最大轮次和终止；先跑通一次工具循环，别先堆 DSL"},
+      {"id": "p2", "text": "模型层统一接口并适配各家 Function Calling；工具层要好注册、能接 MCP、沙箱和超时；上下文层先做滑动窗口再加摘要"},
+      {"id": "p3", "text": "生产还要模型网关（路由、重试、降级、限流）、记忆、全链路 trace，以及输入过滤、输出审核、工具鉴权、数据隔离"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "从零做框架，前两周你先做哪一块，为什么不是先做多 Agent"},
+      {"id": "d2", "intent": "主模型超时或挂了，网关怎么降级"},
+      {"id": "d3", "intent": "线上一次误删，你靠哪一层观测和哪一层权限复盘"}
+    ],
+    "pitfalls": [
+      "Demo 的 while 循环直接当生产执行引擎",
+      "可观测性放到最后，出了问题只能看用户截图"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-autogpt",
+    "name": "AutoGPT 式自主决策",
+    "summary": "高层目标拆成子任务，执行后由模型评估是否达标，失败则改计划，直到完成或碰到迭代上限。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "用户给高层目标，系统拆成子任务列表并规划工具与顺序，不需要人逐步下达指令"},
+      {"id": "p2", "text": "每步执行后用 LLM 评估是否符合预期：通过则推进下一子任务，不通过则改计划重做，形成规划→执行→评估→调整闭环"},
+      {"id": "p3", "text": "必须有迭代上限和外部约束，否则会在评估过严或目标含糊时空转；自主不等于无权限、无预算"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "调研竞品定价，AutoGPT 式循环怎么拆、哪一步会回头"},
+      {"id": "d2", "intent": "评估不过关时，改计划还是换工具，你怎么避免来回抖"},
+      {"id": "d3", "intent": "这种全自主和 ReAct 单步循环，生产上你敢放到哪类任务"}
+    ],
+    "pitfalls": [
+      "没有评估标准，模型永远认为还没完成",
+      "把 AutoGPT 的开放联网执行直接对生产写权限"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-mcp-a2a",
+    "name": "MCP 与 A2A 协同架构",
+    "summary": "MCP 是手，连工具和数据；A2A 是嘴，Agent 之间委派和交付。多 Agent 系统里两者叠用。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent", "mcp"],
+    "key_points": [
+      {"id": "p1", "text": "每个 Agent 内部用 MCP 连自己的工具和数据源；对外用 A2A 接受委派、回报结果、协商分工"},
+      {"id": "p2", "text": "像公司：员工的系统权限是 MCP，开会派活是 A2A。工具不会思考，另一个 Agent 会"},
+      {"id": "p3", "text": "客服例子：前台 Agent 经 A2A 路由；技术 Agent 用 MCP 连知识库和工单；订单 Agent 用 MCP 连订单库和物流 API"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "画一个智能客服，哪些边是 MCP、哪些边是 A2A"},
+      {"id": "d2", "intent": "订单 Agent 要查库存，为什么不让前台 Agent 直接调库存 MCP"},
+      {"id": "d3", "intent": "某个后端 Agent 挂了，前台怎么降级"}
+    ],
+    "pitfalls": [
+      "所有工具都挂在一个超级 Agent 上，再用 A2A 空转",
+      "跨 Agent 传递原始密钥和完整数据库结果"
+    ],
+    "status": "published"
+  }
+]

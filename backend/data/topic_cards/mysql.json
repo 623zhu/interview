@@ -1,0 +1,991 @@
+[
+  {
+    "key": "mysql-index-types",
+    "name": "MySQL 索引类型",
+    "summary": "从数据结构、存储方式和索引性质三个维度说清常见索引，重点是 B+ 树、聚簇与二级索引。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "数据结构上常见 B+ 树、哈希、全文、空间索引；InnoDB/MyISAM 默认 B+ 树，哈希不支持范围和排序"},
+      {"id": "p2", "text": "InnoDB 主键是聚簇索引，叶子存整行；二级索引叶子只存索引列和主键，查非索引列要回表"},
+      {"id": "p3", "text": "性质上还有主键、唯一、普通、联合索引；联合索引遵循最左前缀，一张表只能有一个聚簇索引"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "InnoDB 有哪些索引类型，面试时你通常先从哪一层讲"},
+      {"id": "d2", "intent": "聚簇索引和二级索引叶子各存什么，为什么只能有一个聚簇索引"},
+      {"id": "d3", "intent": "哈希索引适合什么查询，为什么不能替代 B+ 树"}
+    ],
+    "pitfalls": [
+      "把聚簇/非聚簇和主键/普通索引当成两套互不相干的分类",
+      "认为 InnoDB 可以手动建哈希索引当普通二级索引用"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-batch-insert",
+    "name": "批量入库与单条插入",
+    "summary": "批量插入通过减少网络往返和摊薄解析、写日志成本，显著快于逐条 INSERT。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "批量入库是把多行攒成一次 SQL 或一次交互写入，而不是逐条 INSERT"},
+      {"id": "p2", "text": "主要收益是减少客户端与数据库的网络 RTT"},
+      {"id": "p3", "text": "解析、编译、写日志等固定成本被分摊到多行，单行开销下降"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "十万行导入，逐条 insert 和批量 insert 差在哪"},
+      {"id": "d2", "intent": "除了网络，数据库内部还有哪些固定成本被摊薄"},
+      {"id": "d3", "intent": "一次批量过大可能有什么副作用，你们怎么切批"}
+    ],
+    "pitfalls": [
+      "把批量插入理解成开了多个连接并行单条写入",
+      "单条 SQL 塞几十万行导致超包、锁时间过长或 binlog 过大"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-sync-full-incremental",
+    "name": "全量同步与增量同步",
+    "summary": "全量每次拷完整数据，增量只追变更；初始化用全量，日常同步用增量。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "全量同步每次把源端全部数据复制到目标端，实现简单、一致性好，但大表耗时长、压源库"},
+      {"id": "p2", "text": "增量同步只追上次之后的增删改，效率高，但要实现变更追踪，存在漏数据风险"},
+      {"id": "p3", "text": "小表、初始化、容灾恢复常用全量；大数据量、近实时、数仓 ETL 常用增量"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "用 mysqldump 每天倒全表和按 update_time 追变更各属于哪种同步"},
+      {"id": "d2", "intent": "增量同步最容易在哪一步漏数据"},
+      {"id": "d3", "intent": "一次迁移里全量和增量通常怎么配合"}
+    ],
+    "pitfalls": [
+      "认为增量一定比全量更一致",
+      "用 update_time 做增量却漏掉 DELETE"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-cursor-pagination",
+    "name": "游标分页与深度分页",
+    "summary": "深分页不要用大 OFFSET；用上一页最后一条的主键或唯一键定位下一页。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "LIMIT OFFSET 要先扫描再丢弃前 N 行，页码越深越慢；游标分页用 WHERE id > last_id 直接定位"},
+      {"id": "p2", "text": "游标分页性能稳定，且插入新行时不易出现重复或漏行；代价是不能随意跳页"},
+      {"id": "p3", "text": "也可用子查询先在二级索引定位起始主键再回表取行；搜索场景可交给 ES search_after"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "LIMIT 10 OFFSET 10000 为什么慢"},
+      {"id": "d2", "intent": "游标分页的 SQL 怎么写，翻页时数据插入会怎样"},
+      {"id": "d3", "intent": "必须跳到第 N 页时还有哪些办法"}
+    ],
+    "pitfalls": [
+      "排序键不稳定或非唯一时游标会漏数据或重复",
+      "把存储过程里的 CURSOR 和分页游标混为一谈"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-index-leftmost",
+    "name": "联合索引与最左前缀",
+    "summary": "联合索引按列从左到右排序，查询必须从最左列开始匹配，范围条件会截断后续列。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "联合索引在 B+ 树中按最左列排序，同值再按后续列；跳过左列则后面的列无法用来快速定位"},
+      {"id": "p2", "text": "范围条件会截断后续等值列的索引使用"},
+      {"id": "p3", "text": "列顺序应按等值、区分度、排序需求设计，一个联合索引可覆盖多种前缀查询"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "索引 (a,b,c) 时 WHERE b=1 或 WHERE a=1 AND c=1 分别能用上哪些列"},
+      {"id": "d2", "intent": "为什么范围条件后面的列用不上"},
+      {"id": "d3", "intent": "你们慢查询是怎么验证改索引有效的"}
+    ],
+    "pitfalls": [
+      "给低基数列单独建索引",
+      "WHERE 里对索引列做函数导致无法使用索引"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-index-guidelines",
+    "name": "索引该不该建",
+    "summary": "索引加速读但拖慢写、占空间；区分度低、大字段、写多读少的表要慎重。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "每个索引都占磁盘并在写入时维护 B+ 树，索引越多 INSERT/UPDATE/DELETE 越慢，还加重优化器选择成本"},
+      {"id": "p2", "text": "区分度太低的列通常不要建；例外是高度倾斜的状态列，按少数异常值查能滤掉大部分行"},
+      {"id": "p3", "text": "TEXT 等大字段、写多读少的表、从不出现在 WHERE/JOIN/ORDER BY 的列不该建；排序分组字段建索引可避免 filesort"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "哪些字段不该建索引，性别这种列有没有例外"},
+      {"id": "d2", "intent": "一张高并发订单表建十个二级索引会怎样"},
+      {"id": "d3", "intent": "你们上线前怎么判断这条索引值得加"}
+    ],
+    "pitfalls": [
+      "认为索引越多查询一定越快",
+      "给 TEXT/BLOB 整列建普通索引而不是前缀索引或搜索引擎"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-isolation-level",
+    "name": "事务隔离级别",
+    "summary": "四级隔离与脏读、不可重复读、幻读的对应；InnoDB 默认 RR，不少互联网业务用 RC。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "读未提交会脏读；RC 解决脏读但仍不可重复读；RR 用快照让同一事务重复读一致；串行化用锁排队，性能差"},
+      {"id": "p2", "text": "脏读是读到未提交数据；不可重复读是同一行内容变了；幻读是范围行数变了"},
+      {"id": "p3", "text": "默认 RR 与早期 statement binlog 有关；RC 锁范围更小、死锁更少，幻读需业务或唯一约束处理"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "用例子说明不可重复读和幻读的差别"},
+      {"id": "d2", "intent": "快照读和当前读分别是哪些 SQL"},
+      {"id": "d3", "intent": "你们库的隔离级别是什么，为什么这么选"}
+    ],
+    "pitfalls": [
+      "认为 RR 下所有读都不会看到幻影行",
+      "把隔离级别和锁粒度当成一回事"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-count",
+    "name": "count(*)、count(1) 与 count(列)",
+    "summary": "count(*) 与 count(1) 计所有行；count(列) 不计该列 NULL。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "count(*) 和 count(1) 统计所有行，含 NULL 行；count(列名) 只统计该列非 NULL 的行"},
+      {"id": "p2", "text": "InnoDB 下 count(*) 与 count(1) 优化等价，没有谁必然更快"},
+      {"id": "p3", "text": "count(列) 在列无索引时要扫表并判断 NULL，通常更慢；列是主键或有索引时差距缩小"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "count(*) 和 count(id) 结果什么时候会不一样"},
+      {"id": "d2", "intent": "大表 count(*) 慢，你还知道哪些近似或规避办法"},
+      {"id": "d3", "intent": "面试里说 count(1) 比 count(*) 快，你怎么反驳"}
+    ],
+    "pitfalls": [
+      "背诵 count(1) 一定比 count(*) 快",
+      "用 count(列) 当总行数却忘了 NULL 不计"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-char-varchar",
+    "name": "CHAR 与 VARCHAR",
+    "summary": "CHAR 定长、VARCHAR 变长；磁盘按实际内容存，但排序和临时表会按定义长度占内存。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "CHAR(n) 固定占 n 个字符，短则补空格；VARCHAR(n) 按实际长度存，另加 1～2 字节长度前缀"},
+      {"id": "p2", "text": "固定短串如 MD5、国家码可用 CHAR，其余优先 VARCHAR；定长带来的 CPU 优势在业务里通常可忽略"},
+      {"id": "p3", "text": "存相同内容时磁盘占用接近，但排序、分组、临时表会按声明的最大长度分配内存，VARCHAR(255) 会比 VARCHAR(20) 更吃内存"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "用户名该用 CHAR 还是 VARCHAR，为什么"},
+      {"id": "d2", "intent": "VARCHAR(10) 和 VARCHAR(100) 存同样 5 个字，磁盘和内存有何差别"},
+      {"id": "d3", "intent": "什么场景你会坚持用 CHAR"}
+    ],
+    "pitfalls": [
+      "图省事把所有字符串都定义成 VARCHAR(255)",
+      "以为 VARCHAR(100) 会在磁盘上补齐到 100"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-sharding",
+    "name": "分库分表策略与代价",
+    "summary": "水平/垂直拆库拆表能打散容量和 QPS，但会引入分布式事务、跨库 JOIN 和全局 ID 问题。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql", "distributed"],
+    "key_points": [
+      {"id": "p1", "text": "水平按行拆（哈希或范围），垂直按列或按业务拆库；先评估单表行数、QPS 和增长，能靠索引和 SQL 撑住就不要拆"},
+      {"id": "p2", "text": "分片键要高频查询且分布均匀；数量尽量一次给够；中间件可选 JDBC 嵌入或 Proxy"},
+      {"id": "p3", "text": "拆完单机事务失效、跨库 JOIN 要应用拼、自增 ID 冲突、分页排序和聚合都变复杂"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "水平分表和垂直分库各解决什么问题，举个电商例子"},
+      {"id": "d2", "intent": "如果让你主导拆分，评估、分片键、迁移和切流怎么排"},
+      {"id": "d3", "intent": "拆完之后分页、对账、下单事务分别怎么处理"}
+    ],
+    "pitfalls": [
+      "单表还没到瓶颈就上分库分表",
+      "分片键选了几乎不出现在查询里的列"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-log-buffer",
+    "name": "Redo Log Buffer",
+    "summary": "Log Buffer 缓存 redo，把多次小写入合并再刷盘，支撑 WAL。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "Log Buffer 是 InnoDB 缓存 redo log 的内存区，默认约 16MB"},
+      {"id": "p2", "text": "事务执行中的 redo 先写 Buffer，提交时再按策略刷盘，避免每条 redo 都 fsync"},
+      {"id": "p3", "text": "它服务 WAL：先日志后数据页，用合并写入换更少的磁盘 IO"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么不把每条 redo 立刻 fsync"},
+      {"id": "d2", "intent": "事务提交时 Log Buffer 扮演什么角色"},
+      {"id": "d3", "intent": "innodb_flush_log_at_trx_commit 不同取值对丢数据风险的影响"}
+    ],
+    "pitfalls": [
+      "把 Log Buffer 和 Buffer Pool 当成同一块内存",
+      "把 Log Buffer 说成缓存 binlog"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-datetime-timestamp",
+    "name": "DATETIME 与 TIMESTAMP",
+    "summary": "TIMESTAMP 按 UTC 存、随会话时区转换且有 2038 上限；DATETIME 存字面值、范围更大。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "TIMESTAMP 存 Unix 时间，写入按当前时区转 UTC，读取再转会话时区；DATETIME 存字面日期时间，与时区无关"},
+      {"id": "p2", "text": "TIMESTAMP 大约到 2038 年；DATETIME 可到 9999 年，覆盖大多数业务"},
+      {"id": "p3", "text": "5.6.4 后都可带微秒；不带小数秒时 TIMESTAMP 4 字节、DATETIME 5 字节"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "同一条 TIMESTAMP 在北京和纽约读出来为什么可能不同"},
+      {"id": "d2", "intent": "过期时间、日志时间你分别选哪种类型"},
+      {"id": "d3", "intent": "2038 问题具体是什么"}
+    ],
+    "pitfalls": [
+      "用 VARCHAR 存时间导致无法比较和索引效率差",
+      "跨时区系统用 DATETIME 却按服务器本地时区理解"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-table-design",
+    "name": "表设计与范式",
+    "summary": "字段够用就好，必须有主键；互联网常适度反范式，不用物理外键。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "三范式：字段原子、非主键完全依赖主键、消除传递依赖，用来减冗余"},
+      {"id": "p2", "text": "类型选小而准：金额用 DECIMAL，时间用 DATETIME/TIMESTAMP，主键推荐自增 bigint 而不是 UUID"},
+      {"id": "p3", "text": "查询热字段可冗余以免 JOIN；一致性放应用层或消息最终一致，避免物理外键"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "订单明细把订单时间放进联合主键表，违反了哪条范式"},
+      {"id": "d2", "intent": "订单表冗余商品名称你怎么看，和三范式冲突吗"},
+      {"id": "d3", "intent": "建表时主键、索引、类型你各注意什么"}
+    ],
+    "pitfalls": [
+      "UUID 当主键导致页分裂、写入变慢",
+      "用 FLOAT 存金额"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-decimal-money",
+    "name": "金额类型",
+    "summary": "金额用 DECIMAL 或 BIGINT 存分，禁止 FLOAT/DOUBLE。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "FLOAT/DOUBLE 是二进制浮点，金额会有精度误差，不能用"},
+      {"id": "p2", "text": "DECIMAL 是定点小数，如 DECIMAL(18,2) 与 Java BigDecimal 对应"},
+      {"id": "p3", "text": "也可用 BIGINT 存分，整数运算更快，但只能精确到分，展示时要换算"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么不能用 DOUBLE 存价格"},
+      {"id": "d2", "intent": "DECIMAL 和存分两种方案你怎么选"},
+      {"id": "d3", "intent": "对账时 0.1+0.2 这类问题会怎样出现"}
+    ],
+    "pitfalls": [
+      "用 FLOAT 累加金额再 ROUND 当精确值",
+      "DECIMAL 精度声明过小导致溢出或截断"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-exists-vs-in",
+    "name": "EXISTS 与 IN",
+    "summary": "EXISTS 对外表逐行探测，IN 先物化子查询；外表小用 EXISTS，子查询结果小用 IN。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "EXISTS 对外表每一行去子查询探测，命中即可停止；IN 先算出子查询集合再匹配"},
+      {"id": "p2", "text": "外表小、子查询表大时 EXISTS 探测次数少且可走索引；子查询结果很小而外表很大时 IN 更合适"},
+      {"id": "p3", "text": "两边规模接近时优化器常会改写，不要背死哪一个永远更快"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "用户表 1000 行、订单表 100 万，查有过订单的用户用 IN 还是 EXISTS"},
+      {"id": "d2", "intent": "NULL 在 NOT IN 子查询里会怎样"},
+      {"id": "d3", "intent": "你们线上有没有因为 IN 子查询太大变慢的例子"}
+    ],
+    "pitfalls": [
+      "背诵 EXISTS 一定比 IN 快",
+      "NOT IN 子查询含 NULL 导致整段条件未知"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-auto-increment",
+    "name": "自增达到上限",
+    "summary": "AUTO_INCREMENT 到类型最大值后不会回绕，再插入会主键冲突。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "自增到该整数类型上限后继续插入仍使用该最大值，不会回到 0 或 1"},
+      {"id": "p2", "text": "主键冲突报 Duplicate entry，业务写入失败"},
+      {"id": "p3", "text": "INT 约 21 亿，预估寿命不够就要用 BIGINT，并监控自增使用率"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "INT 自增打满后下一条 INSERT 会发生什么"},
+      {"id": "d2", "intent": "为什么不自动回绕到 1"},
+      {"id": "d3", "intent": "你怎么提前发现快要溢出"}
+    ],
+    "pitfalls": [
+      "以为溢出后会从 1 重新开始",
+      "过早用 INT 当主键却按日千万级增长"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-change-buffer",
+    "name": "Change Buffer",
+    "summary": "二级索引页不在 Buffer Pool 时，先把变更记在 Change Buffer，稍后合并，减少随机读。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "Change Buffer 暂存对二级索引的写；目标索引页不在内存时不必立刻从磁盘读页"},
+      {"id": "p2", "text": "页被读入或后台 flush 时再把积压变更合并进索引页"},
+      {"id": "p3", "text": "收益是少随机读、同页多次修改可批量应用；唯一索引要立刻判断冲突，通常不能走 Change Buffer"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "插入一行时二级索引页不在内存，InnoDB 会立刻读盘吗"},
+      {"id": "d2", "intent": "Change Buffer 和 Buffer Pool、Log Buffer 各干什么"},
+      {"id": "d3", "intent": "什么情况下 Change Buffer 帮不上忙"}
+    ],
+    "pitfalls": [
+      "把 Change Buffer 说成 redo 或 binlog",
+      "认为主键聚簇索引也走 Change Buffer"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-storage-engine",
+    "name": "InnoDB 与 MyISAM",
+    "summary": "InnoDB 有事务、行锁、崩溃恢复和聚簇主键；MyISAM 表锁、无事务，只适合只读或非关键场景。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "InnoDB 默认引擎，支持事务、行锁、MVCC、外键和 redo 崩溃恢复，主键是聚簇索引"},
+      {"id": "p2", "text": "MyISAM 无事务、仅表锁，索引与数据分离，写入会锁表，不适合高并发写"},
+      {"id": "p3", "text": "MEMORY 重启丢失；Archive 高压缩只插只查。线上 OLTP 几乎都用 InnoDB"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "InnoDB 和 MyISAM 最关键的三条差别"},
+      {"id": "d2", "intent": "为什么现在几乎不用 MyISAM 做订单表"},
+      {"id": "d3", "intent": "聚簇索引这一点对主键查询有什么影响"}
+    ],
+    "pitfalls": [
+      "还把 MyISAM 当成默认引擎",
+      "认为 MyISAM 支持行锁"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-covering-index",
+    "name": "覆盖索引与回表",
+    "summary": "二级索引叶子只有索引列和主键；缺列就要回表，列都在索引上就是覆盖。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "回表：二级索引拿到主键后再去聚簇索引取完整行"},
+      {"id": "p2", "text": "覆盖索引指查询所需列都在二级索引上，Extra 常见 Using index，可免回表"},
+      {"id": "p3", "text": "SELECT * 很难覆盖；只查必要列，或把高频列放进联合索引才有机会"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "回表是怎么发生的，为什么会慢"},
+      {"id": "d2", "intent": "怎样改 SQL 或索引变成覆盖索引"},
+      {"id": "d3", "intent": "EXPLAIN 里你看哪些列判断有没有回表"}
+    ],
+    "pitfalls": [
+      "把覆盖索引和最左前缀混为一谈",
+      "为了覆盖把很多无关列塞进联合索引"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-index-pushdown",
+    "name": "索引下推",
+    "summary": "ICP 把部分 WHERE 下推到引擎，用索引列先过滤，减少回表。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "索引下推是 5.6 引入的优化，主要用在联合索引"},
+      {"id": "p2", "text": "没有 ICP 时引擎只按索引定位主键，剩余条件在 Server 层回表后再滤"},
+      {"id": "p3", "text": "有 ICP 时引擎可用索引上的后续列先丢掉不匹配行，再回表，降低 IO"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "联合索引 (a,b) 上 WHERE a=1 AND b LIKE '%x%' 时 ICP 做了什么"},
+      {"id": "d2", "intent": "EXPLAIN Extra 里 Using index condition 是什么意思"},
+      {"id": "d3", "intent": "它和覆盖索引有什么不同"}
+    ],
+    "pitfalls": [
+      "把 ICP 当成覆盖索引",
+      "认为有 ICP 就一定不用回表"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-why-bplus-tree",
+    "name": "为什么用 B+ 树",
+    "summary": "B+ 树更矮、非叶不存行、叶子链表适合范围扫，把磁盘 IO 降到几次；三层大约两千万行。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "索引目标是少磁盘随机 IO。B+ 是多叉，一层节点可放大量 key，三层即可覆盖约两千万行"},
+      {"id": "p2", "text": "非叶子只存 key 和指针，页内索引项更多；叶子存行或主键并用链表相连，范围查询顺序扫"},
+      {"id": "p3", "text": "红黑树是二叉，同样数据量树高二十多层，每次下沉一次随机 IO，范围查询还要中序回溯"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么不用红黑树或哈希当 InnoDB 主键索引"},
+      {"id": "d2", "intent": "三层 B+ 树两千万行这个数量是怎么估的"},
+      {"id": "d3", "intent": "叶子链表对 ORDER BY、范围扫描有什么帮助"}
+    ],
+    "pitfalls": [
+      "只说 B+ 树平衡，不提磁盘 IO 和树高",
+      "把哈希等值 O(1) 当成可以替代范围查询的理由"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-redo-undo-binlog",
+    "name": "binlog、redo、undo 与两阶段提交",
+    "summary": "binlog 做复制和恢复，redo 做崩溃恢复，undo 做回滚和 MVCC；提交靠 redo/binlog 两阶段对齐。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "binlog 是 Server 层逻辑日志，用于主从和按时间点恢复；redo 是 InnoDB 物理日志，循环写，保证脏页未刷盘也能恢复"},
+      {"id": "p2", "text": "undo 记修改前的值，用于回滚和 MVCC 版本链；redo 记某页某偏移改成什么，不是原始 SQL"},
+      {"id": "p3", "text": "两阶段提交：redo 先标 prepare，再写 binlog，成功后 redo 标 commit，避免引擎层和 Server 层日志不一致"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "三种日志各保证什么，崩溃恢复用哪一个"},
+      {"id": "d2", "intent": "插入一行时 redo 大概记哪些内容"},
+      {"id": "d3", "intent": "为什么需要 redo 和 binlog 的两阶段提交"}
+    ],
+    "pitfalls": [
+      "把 redo 说成记录 SQL 文本",
+      "以为 crash recovery 靠 binlog 而不是 redo"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-long-transaction",
+    "name": "长事务的危害",
+    "summary": "长事务拉长锁时间、堆 undo、拖主从，还让回滚和死锁更贵。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "持锁时间长导致等待、连接池占满甚至雪崩；持锁越多越容易死锁"},
+      {"id": "p2", "text": "MVCC 要保留长事务开始时的版本，undo 无法清理，膨胀后回滚段也变慢"},
+      {"id": "p3", "text": "大事务在从库重放同样久，主从延迟；一旦失败回滚成本与执行时间相当"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "一个跑了几分钟的事务，对其他请求和磁盘分别有什么影响"},
+      {"id": "d2", "intent": "怎么在代码和配置上避免长事务"},
+      {"id": "d3", "intent": "发现 undo 暴涨你怎么查是不是长事务"}
+    ],
+    "pitfalls": [
+      "在事务里调远程 HTTP 或等用户确认",
+      "一次事务里跑超大批量更新还不切批"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-gap-lock",
+    "name": "间隙锁与幻读",
+    "summary": "RR 下当前读用间隙锁/临键锁阻止间隔插入；RC 几乎不用间隙锁。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "间隙锁锁的是索引记录之间的间隔，阻止向该间隔插入"},
+      {"id": "p2", "text": "等值查询在唯一索引命中记录时通常不加间隙；范围或非唯一索引容易加临键锁"},
+      {"id": "p3", "text": "RC 几乎不用间隙锁，所以幻读要靠业务或唯一约束处理"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么 UPDATE 一个不存在的值也会堵住别人 INSERT"},
+      {"id": "d2", "intent": "怎样判断当前等待是间隙锁"},
+      {"id": "d3", "intent": "你们有没有因为间隙锁导致的超时，后来怎么改 SQL"}
+    ],
+    "pitfalls": [
+      "以为没查到行就不会加锁",
+      "大范围 UPDATE/DELETE 不带合适索引"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-lock-types",
+    "name": "InnoDB 锁类型",
+    "summary": "表锁/行锁，S/X，以及记录锁、间隙锁、临键锁和意向锁、MDL。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "粒度：表锁锁整表，行锁锁行；模式：S 锁共享读，X 锁排他写"},
+      {"id": "p2", "text": "行锁细分记录锁、间隙锁、临键锁（记录+间隙）；意向锁让加表锁时不必扫所有行锁"},
+      {"id": "p3", "text": "MDL 保护表结构，DDL 与 DML 不能同时进行；另有插入意向锁和自增锁"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "记录锁、间隙锁、临键锁分别锁什么"},
+      {"id": "d2", "intent": "意向锁解决了什么问题"},
+      {"id": "d3", "intent": "线上 ALTER 卡住，可能和哪种锁有关"}
+    ],
+    "pitfalls": [
+      "把间隙锁和记录锁混用",
+      "忽略 MDL，在高峰直接 DDL"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-optimistic-lock",
+    "name": "乐观锁与悲观锁",
+    "summary": "悲观锁先锁再改；乐观锁用 version 在更新时检测冲突。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "悲观锁假定冲突多，先 SELECT FOR UPDATE 或 LOCK IN SHARE MODE，提交前别人无法改"},
+      {"id": "p2", "text": "乐观锁假定冲突少，更新带 version 或旧值条件，影响 0 行则重试或失败"},
+      {"id": "p3", "text": "冲突频繁、必须串行用悲观锁；冲突少、要吞吐用乐观锁，并处理 ABA 和重试风暴"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "库存扣减用乐观锁怎么写 SQL"},
+      {"id": "d2", "intent": "什么场景必须 FOR UPDATE"},
+      {"id": "d3", "intent": "乐观锁更新失败你们怎么重试，会不会把数据库打爆"}
+    ],
+    "pitfalls": [
+      "乐观锁不加 version 只靠读出来的金额回写",
+      "长事务里拿着 FOR UPDATE 再调外部接口"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-deadlock",
+    "name": "死锁检测与处理",
+    "summary": "InnoDB 会选代价小的事务回滚；仍超时则靠 lock wait timeout 或人工 KILL。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "死锁是循环等待。innodb_deadlock_detect 默认开启，引擎回滚代价较小的一方"},
+      {"id": "p2", "text": "innodb_lock_wait_timeout 默认 50 秒，超时未构成死锁也会放弃等待"},
+      {"id": "p3", "text": "应急用 SHOW ENGINE INNODB STATUS 或 performance_schema 找阻塞线程再 KILL；根因是统一加锁顺序、减小事务、加对索引"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "发现死锁报错，MySQL 已经做了什么，业务还要做什么"},
+      {"id": "d2", "intent": "怎么查互相卡住的两条 SQL"},
+      {"id": "d3", "intent": "你们怎么从代码上降低死锁概率"}
+    ],
+    "pitfalls": [
+      "把锁等待超时都当成死锁",
+      "只 KILL 线程不改加锁顺序，问题反复出现"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-slow-query",
+    "name": "慢查询与 SQL 调优",
+    "summary": "慢日志定位，EXPLAIN 看 type/key/rows/Extra，再改索引、SQL 或架构。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "先开慢日志（线上阈值常 1～2 秒），用 mysqldumpslow 或 pt-query-digest 汇总，区分真慢 SQL 和锁等待"},
+      {"id": "p2", "text": "EXPLAIN 看 type（避免 ALL）、key、rows、Extra（filesort/temporary 要解释）；type 大致 const>eq_ref>ref>range>index>ALL"},
+      {"id": "p3", "text": "优化：联合/覆盖索引、避免索引列函数和前缀 %LIKE、字符集一致、少 SELECT *；再往上是缓存、读写分离、分表和砍字段"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "线上接口变慢，你怎么确认是哪条 SQL"},
+      {"id": "d2", "intent": "EXPLAIN 里哪几个字段会让你决定加索引"},
+      {"id": "d3", "intent": "加索引之外还有哪些改法"}
+    ],
+    "pitfalls": [
+      "只看执行时间不看扫描行数",
+      "在空表上 EXPLAIN 就下结论"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-ha",
+    "name": "高可用与避免单点",
+    "summary": "主从或主备做冗余，MGR/MHA 做自动故障转移，并配合监控和异地备份。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql", "distributed"],
+    "key_points": [
+      {"id": "p1", "text": "主从复制加读写分离：从库分担读，主挂了可提升从库；主备则备库不接读，切换更简单"},
+      {"id": "p2", "text": "MGR 官方组复制，可自动故障转移且数据更强一致；MHA/Orchestrator 做探活和切主"},
+      {"id": "p3", "text": "还要监控延迟、连接、磁盘，备份放到不同机房，防止机房级故障"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "主库宕机你们多久能恢复写，靠什么组件切"},
+      {"id": "d2", "intent": "主从和 MGR 你怎么选"},
+      {"id": "d3", "intent": "切主时未复制完的 binlog 怎么处理"}
+    ],
+    "pitfalls": [
+      "只有主从却没有自动切主和演练",
+      "备份和主库在同一块磁盘或同一机房"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-read-write-split",
+    "name": "读写分离",
+    "summary": "写走主库、读走从库；可用应用路由或中间件，写后读要防延迟。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql", "distributed"],
+    "key_points": [
+      {"id": "p1", "text": "代码层可用 AbstractRoutingDataSource 按注解或事务路由；灵活但多语言要各写一套，切主常要改配置"},
+      {"id": "p2", "text": "中间件（ProxySQL、MySQL Router、ShardingSphere-Proxy 等）对应用透明，但多一跳和一套运维"},
+      {"id": "p3", "text": "强一致读强制走主库或写后短窗口走主；也可二次查主库或先写缓存，各自有代价"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "注册完立刻登录，读从库可能怎样，你怎么处理"},
+      {"id": "d2", "intent": "应用路由和 Proxy 你怎么选"},
+      {"id": "d3", "intent": "从库查不到再打主库有什么风险"}
+    ],
+    "pitfalls": [
+      "所有读都打从库，忽略主从延迟",
+      "把读写分离当成已经高可用"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-replication",
+    "name": "主从复制与延迟",
+    "summary": "dump、IO、SQL 三线程基于 binlog 复制；延迟只能缩短或在业务上规避。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql", "distributed"],
+    "key_points": [
+      {"id": "p1", "text": "主库 dump 线程推 binlog，从库 IO 线程写入 relay log，SQL 线程重放"},
+      {"id": "p2", "text": "延迟必然存在：大事务、从库规格不足、单线程重放都是常见原因，可并行复制和升级从库"},
+      {"id": "p3", "text": "业务上：写后读走主库、按写入时间窗口走主、二次查询或缓存前置"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "主从同步三个线程各自干什么"},
+      {"id": "d2", "intent": "从库延迟到几十秒，你先查哪些指标"},
+      {"id": "d3", "intent": "业务上有哪些办法让用户读到刚写下的数据"}
+    ],
+    "pitfalls": [
+      "认为开启主从后读写就强一致",
+      "从库规格远低于主库还指望零延迟"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-buffer-pool",
+    "name": "Buffer Pool 与读写路径",
+    "summary": "数据页先走内存；命中不读盘，修改先改内存再异步刷脏。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "查询先看 Buffer Pool，命中则内存返回；未命中按页（默认 16KB）从磁盘加载"},
+      {"id": "p2", "text": "修改也改内存页，脏页由后台在空闲或 checkpoint 时刷盘，不是每条 SQL 都立刻写数据文件"},
+      {"id": "p3", "text": "innodb_buffer_pool_size 常设物理内存 70%～80%，让热数据留在内存"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "一次按主键查询一定打磁盘吗"},
+      {"id": "d2", "intent": "改一行时数据文件什么时候变"},
+      {"id": "d3", "intent": "Buffer Pool 太小会看到什么现象"}
+    ],
+    "pitfalls": [
+      "认为每条 SELECT 都从磁盘读行",
+      "把 Buffer Pool 和 redo log 文件当成一回事"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-join",
+    "name": "多表 JOIN",
+    "summary": "超过三表的 JOIN 容易打满数据库 CPU；大表关联优先拆成单表查询在应用层拼。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "数据库常是瓶颈，复杂 JOIN 占用 CPU/内存并影响其他查询；两表且索引合理、数据可控时可以 JOIN"},
+      {"id": "p2", "text": "大表 JOIN 一旦执行计划选错就可能全表扫描，一条慢 SQL 拖垮实例"},
+      {"id": "p3", "text": "可拆成多次单表查询在应用层关联；应用可水平扩展，库扩展更贵。也可用冗余字段减少 JOIN"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "阿里手册为什么不建议超过三表 JOIN"},
+      {"id": "d2", "intent": "列表页要带用户名和商品名，你拆成几次查询"},
+      {"id": "d3", "intent": "JOIN 列字符集不一致会怎样"}
+    ],
+    "pitfalls": [
+      "在千万级表上无索引 JOIN",
+      "utf8 与 utf8mb4 关联导致隐式转换、索引失效"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-delete-drop-truncate",
+    "name": "DELETE、DROP、TRUNCATE",
+    "summary": "DELETE 可条件删行并可回滚；TRUNCATE 清空保留结构；DROP 删表。速度 DROP > TRUNCATE > DELETE。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "DELETE 删行留表结构，可 WHERE，记日志，事务内可回滚"},
+      {"id": "p2", "text": "TRUNCATE 清空数据保留结构，类似重建表，通常不可回滚"},
+      {"id": "p3", "text": "DROP 删除数据、结构和索引；速度 DROP > TRUNCATE > DELETE，因为 DELETE 要逐行和记 undo/redo"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "只想清空测试数据但留表，用哪个，能回滚吗"},
+      {"id": "d2", "intent": "为什么 DELETE 大表特别慢"},
+      {"id": "d3", "intent": "线上误 DROP 靠什么恢复"}
+    ],
+    "pitfalls": [
+      "把 TRUNCATE 当成可回滚的 DELETE",
+      "无 WHERE 的 DELETE 当清空工具却打爆 binlog"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-no-blob",
+    "name": "不要把大文件存进 MySQL",
+    "summary": "图片音视频放对象存储，库里只存 URL，以免撑爆 Buffer Pool 和 binlog。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "MySQL 擅长结构化数据和关系，不适合当文件系统"},
+      {"id": "p2", "text": "BLOB 会挤占 Buffer Pool、放大 binlog 和备份，主从带宽也被吃满"},
+      {"id": "p3", "text": "文件走 OSS/S3/MinIO 或本地盘，表里存路径或 URL"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "头像直接塞 BLOB 会打到哪几块资源"},
+      {"id": "d2", "intent": "正确的存储和表字段怎么设计"},
+      {"id": "d3", "intent": "已经存进去了，迁移时要注意什么"}
+    ],
+    "pitfalls": [
+      "用 LONGTEXT 存 Base64 图片",
+      "备份策略仍按小库来估时间"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-no-stored-procedure",
+    "name": "为什么不用存储过程",
+    "summary": "存储过程绑死方言、难测难版本管理，还把计算压在数据库上。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "方言不移植，换库几乎要重写"},
+      {"id": "p2", "text": "难以断点、单测和纳入 Git/CI，多人改库内容易冲突且难回滚"},
+      {"id": "p3", "text": "逻辑放数据库会争用本已紧张的 CPU；应用层可以水平扩展"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "阿里手册不推荐存储过程，你认同哪几条"},
+      {"id": "d2", "intent": "复杂校验放存储过程和放服务层各有什么代价"},
+      {"id": "d3", "intent": "历史存储过程要迭代，你怎么做版本管理"}
+    ],
+    "pitfalls": [
+      "把核心下单流程写成存储过程导致无法扩容",
+      "线上手工 ALTER 存储过程，没有评审和回滚"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-zero-downtime-migration",
+    "name": "不停服迁库",
+    "summary": "大库用同步加双写、校验和灰度切读，保留回滚；小库可脚本核对后切。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql", "distributed"],
+    "key_points": [
+      {"id": "p1", "text": "先看量级：几十万行可脚本迁移核对；大数据量必须处理在线写入并准备回滚"},
+      {"id": "p2", "text": "常见路径：新库先做旧库从库或 DTS 同步 → 低峰对齐后开双写 → 抽样校验 → 灰度切读 → 观察后再只写新库"},
+      {"id": "p3", "text": "双写要有开关；不一致要告警；切流按用户或 ID 百分比，出问题立刻读回旧库"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "自建迁到云上，双写从哪一步开始、哪一步关闭同步"},
+      {"id": "d2", "intent": "数据量很大时怎么核对"},
+      {"id": "d3", "intent": "灰度到 20% 发现不一致，怎么回滚"}
+    ],
+    "pitfalls": [
+      "没做增量同步就直接停写导数据",
+      "切读后马上关双写，没有观察窗口"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-query-optimizer",
+    "name": "优化器如何选计划",
+    "summary": "解析、预处理后按 IO+CPU 成本在候选计划里选最低的。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "流程：解析成语法树 → 校验对象和权限并做简单改写 → 枚举计划算成本"},
+      {"id": "p2", "text": "成本约是读页数×IO 单价 + 扫描行数×CPU 单价；统计信息不准就会选错"},
+      {"id": "p3", "text": "小表全表扫描可能比二级索引+回表更便宜，所以有索引也不一定走"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么明明有索引 EXPLAIN 却是 ALL"},
+      {"id": "d2", "intent": "成本里的 IO 和 CPU 大致怎么理解"},
+      {"id": "d3", "intent": "统计信息过期你怎么处理"}
+    ],
+    "pitfalls": [
+      "把 type=ALL 一律当成没建索引",
+      "只在开发库几行数据上看执行计划"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-logical-fk",
+    "name": "逻辑外键与物理外键",
+    "summary": "互联网多用逻辑外键，由应用维护关联，避免数据库在高并发下做级联检查。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "物理外键是 FOREIGN KEY，库会拒绝孤儿行并可能级联"},
+      {"id": "p2", "text": "逻辑外键只存普通 ID，存在性由代码或最终一致性保证"},
+      {"id": "p3", "text": "高并发下物理外键的检查和级联容易成为瓶颈，也给分库分表埋坑，故手册常禁止"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "订单表 user_id 不建外键，你怎么防止脏数据"},
+      {"id": "d2", "intent": "物理外键在分库后会碰到什么"},
+      {"id": "d3", "intent": "什么系统你反而会保留物理外键"}
+    ],
+    "pitfalls": [
+      "既无外键也无校验，导致大量孤儿订单",
+      "级联删除误伤业务数据"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-sql-execution-order",
+    "name": "SQL 逻辑执行顺序",
+    "summary": "书写顺序不是执行顺序：FROM/JOIN → WHERE → GROUP BY → HAVING → SELECT → ORDER BY → LIMIT。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "先 FROM/JOIN 出工作表，再 WHERE 过滤行，再 GROUP BY/HAVING，然后才 SELECT"},
+      {"id": "p2", "text": "ORDER BY、LIMIT 在 SELECT 之后，所以 SELECT 别名一般不能出现在 WHERE，但可以出现在 ORDER BY"},
+      {"id": "p3", "text": "HAVING 过滤的是分组后的结果，WHERE 过滤的是分组前的行"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么 WHERE 里不能用 SELECT 列表的别名"},
+      {"id": "d2", "intent": "过滤分组后的 SUM 应该写 WHERE 还是 HAVING"},
+      {"id": "d3", "intent": "LIMIT 在这个顺序里为什么能减少排序开销或不能"}
+    ],
+    "pitfalls": [
+      "用 WHERE 写聚合条件",
+      "以为书写顺序就是引擎执行顺序"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-bplus-lookup",
+    "name": "B+ 树查找过程",
+    "summary": "先沿根到叶二分定位叶子页，再在页目录里二分到槽，最后在组内链表找到记录。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "垂直方向：从根节点把查找键与节点内 key 比较，沿指针下行，三层树最多三次页 IO 到叶子"},
+      {"id": "p2", "text": "叶子是 16KB 页，页目录把记录分组，槽指向每组最大记录，先对槽二分"},
+      {"id": "p3", "text": "组内再沿单向链表比较，找到目标行。整体是根→中间→叶子→页目录→组内链表"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "请逐步描述按主键查一行，内存和磁盘各发生什么"},
+      {"id": "d2", "intent": "页目录解决了什么，没有它页内怎么找"},
+      {"id": "d3", "intent": "二级索引查找和主键查找在这一过程上有何不同"}
+    ],
+    "pitfalls": [
+      "只说到树高三层，说不清页内怎么找",
+      "把页内查找说成哈希"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-transaction-acid",
+    "name": "InnoDB 如何实现事务",
+    "summary": "redo 保持久，undo 保原子，锁和 MVCC 保隔离，一致性是前三者共同作用。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "持久性：提交先把 redo 落盘（WAL），崩溃后重放未刷脏页"},
+      {"id": "p2", "text": "原子性：改前写 undo，回滚按 undo 逆操作，不会停在改了一半的状态"},
+      {"id": "p3", "text": "隔离性：行锁/间隙锁互斥写写；MVCC 让普通读走版本链，读写互不堵。一致性来自上述保证"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "ACID 分别主要由哪些组件保证"},
+      {"id": "d2", "intent": "提交成功但数据页还没刷盘，宕机后怎么恢复"},
+      {"id": "d3", "intent": "没有 MVCC 只用锁，读写并发会怎样"}
+    ],
+    "pitfalls": [
+      "把 binlog 当成崩溃恢复的主路径",
+      "认为隔离只靠 MVCC、锁可有可无"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "mysql-mvcc",
+    "name": "MVCC 与二级索引可见性",
+    "summary": "聚簇索引用 trx_id 和 undo 链做快照读；二级索引本身没有完整版本链，常要回表判断。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mysql"],
+    "key_points": [
+      {"id": "p1", "text": "更新不覆盖原地：旧值进 undo，新值带 trx_id 和 roll_pointer，形成版本链；普通 SELECT 快照读不加锁"},
+      {"id": "p2", "text": "没有 MVCC 就只能 LBCC，读写互相等待，吞吐下降"},
+      {"id": "p3", "text": "二级索引条目无 trx_id/roll_ptr，删除或更新后往往要回表用聚簇索引判断可见性；页上最大 trx_id 小于当前读视图最小活跃事务时才可免回表"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "隐藏列 trx_id 和 roll_pointer 各做什么"},
+      {"id": "d2", "intent": "为什么说二级索引没有自己的 MVCC 快照"},
+      {"id": "d3", "intent": "覆盖索引查询在什么情况下仍会回表"}
+    ],
+    "pitfalls": [
+      "认为覆盖索引在任何隔离级别下都绝不回表",
+      "把快照读和 FOR UPDATE 当前读混为一谈"
+    ],
+    "status": "published"
+  }
+]

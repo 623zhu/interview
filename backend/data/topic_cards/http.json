@@ -1,0 +1,48 @@
+[
+  {
+    "key": "http-idempotent-api",
+    "name": "接口幂等",
+    "summary": "超时重试下如何避免重复下单、重复扣款。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["http", "mysql"],
+    "key_points": [
+      {"id": "p1", "text": "网络超时客户端重试时，服务端可能已经成功，必须靠幂等键去重"},
+      {"id": "p2", "text": "唯一索引或幂等表比先查后插更可靠；状态机只允许合法跃迁"},
+      {"id": "p3", "text": "GET 天然幂等；POST 转支付/下单必须显式设计，Token 或业务单号都可以"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "用户连点两次或网关重试，你们怎么保证只扣一次"},
+      {"id": "d2", "intent": "幂等键放 header 还是 body，过期和冲突怎么处理"},
+      {"id": "d3", "intent": "下游也超时了，整条链路怎么继续保持幂等"}
+    ],
+    "pitfalls": [
+      "先 SELECT 再 INSERT 当幂等",
+      "只幂等入口，补偿任务又写了一次"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "timeout-retry-circuit-breaker",
+    "name": "超时、重试与熔断",
+    "summary": "超时必须设，重试要有预算和幂等，熔断保护自己也保护下游。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["http"],
+    "key_points": [
+      {"id": "p1", "text": "没有超时的调用会耗尽线程池；超时要小于上游等待时间"},
+      {"id": "p2", "text": "只对幂等和明确可重试的错误重试，次数和退避要有上限"},
+      {"id": "p3", "text": "熔断在错误率或慢调用超阈值后快速失败，半开探测再恢复"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "下游变慢时，你们线程池会先发生什么"},
+      {"id": "d2", "intent": "哪些异常能重试，支付回调能不能重试"},
+      {"id": "d3", "intent": "熔断打开后用户看到什么，何时自动恢复"}
+    ],
+    "pitfalls": [
+      "重试没有抖动，雪崩时一起打下游",
+      "超时设得比网关还长"
+    ],
+    "status": "published"
+  }
+]

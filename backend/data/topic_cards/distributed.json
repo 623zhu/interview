@@ -1,0 +1,71 @@
+[
+  {
+    "key": "distributed-rate-limit",
+    "name": "限流",
+    "summary": "单机与分布式限流的算法选择，以及被限流后对用户的行为。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "固定窗口会在窗口边界突刺；滑动窗口或令牌桶更平滑"},
+      {"id": "p2", "text": "多实例要用 Redis 等集中计数，本地限流挡不住总量"},
+      {"id": "p3", "text": "限流要区分按用户、按 IP、按接口；返回 429 并带重试建议"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "网关限流和应用内限流各挡什么"},
+      {"id": "d2", "intent": "Redis 计数失败时是放行还是拒绝，为什么"},
+      {"id": "d3", "intent": "你们怎么压测得出阈值，误伤正常用户怎么办"}
+    ],
+    "pitfalls": [
+      "只限单机 QPS，扩容后限额翻倍",
+      "限流后丢请求且没有明确错误码"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "distributed-tx-local-message",
+    "name": "本地消息表",
+    "summary": "本地事务写出消息表，异步投递实现对下游的最终一致。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["mq", "mysql"],
+    "key_points": [
+      {"id": "p1", "text": "业务表和消息表同一本地事务提交，避免业务成了消息没发出"},
+      {"id": "p2", "text": "独立投递器扫描待发送记录，失败重试；下游必须幂等"},
+      {"id": "p3", "text": "这是最终一致，不是 TCC 那种同步两阶段；适合能接受短暂延迟的链路"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么不直接在事务里发 MQ"},
+      {"id": "d2", "intent": "投递器宕机期间消息积压，如何恢复且不重复伤害下游"},
+      {"id": "d3", "intent": "和你们现在的对账/补偿怎么配合"}
+    ],
+    "pitfalls": [
+      "事务提交后才 insert 消息表，等于没保证",
+      "没有对账，投递成功当业务成功"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "cap-consistency-choice",
+    "name": "一致性与可用性取舍",
+    "summary": "分区发生时选 C 还是 A，以及业务上用什么补偿让用户可接受。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["distributed"],
+    "key_points": [
+      {"id": "p1", "text": "分区时无法同时要强一致和持续可写，必须选一边再谈补偿"},
+      {"id": "p2", "text": "库存、资金常用强一致或保守扣减；Feed、计数可用最终一致"},
+      {"id": "p3", "text": "选择要落到超时、降级文案和对账，而不是只背 CAP 三个字母"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "你们系统里哪块必须强一致，哪块可以延迟"},
+      {"id": "d2", "intent": "下游超时是当失败还是当未知，用户侧怎么展示"},
+      {"id": "d3", "intent": "出现不一致后多久能修平，靠什么任务"}
+    ],
+    "pitfalls": [
+      "用 CAP 直接给具体架构打分，不谈故障模型",
+      "口头最终一致，但没有任何对账"
+    ],
+    "status": "published"
+  }
+]

@@ -1,0 +1,94 @@
+[
+  {
+    "key": "java-hashmap-concurrent",
+    "name": "HashMap 与 ConcurrentHashMap",
+    "summary": "HashMap 扩容与并发问题，以及 ConcurrentHashMap 如何保证并发读写。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "HashMap 在并发 put 时可能丢数据，JDK7 扩容还可能成环"},
+      {"id": "p2", "text": "ConcurrentHashMap 不允许 null key/value，用 CAS 和 synchronized 保证桶级并发"},
+      {"id": "p3", "text": "size/扩容在 ConcurrentHashMap 里是近似或协助完成的，不能当精确计数器"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "多线程同时写 HashMap 会出现什么问题"},
+      {"id": "d2", "intent": "ConcurrentHashMap 的 put 如何避免锁整张表"},
+      {"id": "d3", "intent": "项目里为什么选它，有没有用过 computeIfAbsent 的坑"}
+    ],
+    "pitfalls": [
+      "把 ConcurrentHashMap 当成完全无锁",
+      "用它的 size 做精确限流或库存"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-volatile-happens-before",
+    "name": "volatile 与可见性",
+    "summary": "volatile 保证可见性和有序性，不保证复合操作原子性。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "volatile 写对后续读有 happens-before，能刷新工作内存"},
+      {"id": "p2", "text": "禁止指令重排，但不能让 i++ 变成原子操作"},
+      {"id": "p3", "text": "状态标志、双重检查里的可见实例适合用 volatile，计数要用原子类或锁"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "不用 volatile 时，另一个线程为什么可能看不到写入"},
+      {"id": "d2", "intent": "为什么 volatile int 做计数仍然会丢更新"},
+      {"id": "d3", "intent": "你们项目里哪处必须用它，不用会怎样"}
+    ],
+    "pitfalls": [
+      "把 volatile 当锁用",
+      "认为双重检查单例只加 synchronized 就够"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-synchronized-reentrantlock",
+    "name": "synchronized 与 ReentrantLock",
+    "summary": "两种互斥手段的可重入、中断、公平性和条件队列差异。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "两者都可重入；synchronized 退出自动释放，Lock 必须在 finally 释放"},
+      {"id": "p2", "text": "ReentrantLock 可响应中断、可尝试加锁、可公平锁，synchronized 不能"},
+      {"id": "p3", "text": "多个条件队列用 Condition；synchronized 只有一个 wait/notify 队列"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "什么场景必须用 ReentrantLock 而不是 synchronized"},
+      {"id": "d2", "intent": "忘记 unlock 会发生什么，代码上怎么防"},
+      {"id": "d3", "intent": "公平锁解决了什么，为什么默认不公平"}
+    ],
+    "pitfalls": [
+      "Lock.lock() 后不写 finally",
+      "把公平锁当成更高性能选项"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-thread-pool",
+    "name": "线程池参数与拒绝策略",
+    "summary": "核心线程、队列、最大线程的执行顺序，以及拒绝策略如何选。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "任务先给 core，再进队列，队列满才扩到 max，再满才拒绝"},
+      {"id": "p2", "text": "无界队列会让 max 形同虚设，容易把内存打满"},
+      {"id": "p3", "text": "CallerRuns、Abort、Discard、DiscardOldest 适用场景不同，生产默认 Abort 更安全"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "core=4、queue=100、max=8 时第 5 个任务去哪"},
+      {"id": "d2", "intent": "Executors.newFixedThreadPool 的队列有什么风险"},
+      {"id": "d3", "intent": "你们接口线程池怎么定参数、拒绝时怎么对用户"}
+    ],
+    "pitfalls": [
+      "生产用 Executors 工厂方法",
+      "以为设置了 maxPoolSize 就一定能扩容"
+    ],
+    "status": "published"
+  }
+]
