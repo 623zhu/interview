@@ -734,5 +734,695 @@
       "只说平衡，不提范围查询和内存场景"
     ],
     "status": "published"
+  },
+  {
+    "key": "redis-set",
+    "name": "Set 与集合运算",
+    "summary": "无序去重，intset 或 hashtable 编码；适合标签、共同好友，不要拿来存海量明细。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "SADD/SISMEMBER 平均 O(1)；SINTER/SUNION/SDIFF 做交并差，适合共同关注、标签筛选"},
+      {"id": "p2", "text": "成员全是整数且数量少时用 intset 紧凑存储，出现非整数或超阈值升级 hashtable"},
+      {"id": "p3", "text": "能拿出成员明细，内存随人数涨；海量只关心基数用 HyperLogLog，只要 0/1 状态用 Bitmap"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "共同好友你会用哪条命令，复杂度怎么估"},
+      {"id": "d2", "intent": "什么时候 Set 会从 intset 变成 hashtable"},
+      {"id": "d3", "intent": "日活用户名单用 Set 还是 HyperLogLog"}
+    ],
+    "pitfalls": [
+      "对百万级 Set 直接 SMEMBERS 拉回应用",
+      "用 Set 存连续用户 ID 的签到，浪费大量内存"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-bitmap",
+    "name": "Bitmap 签到与活跃",
+    "summary": "在 String 上按偏移置位，适合 ID 紧凑的签到、在线状态；最大偏移决定空间。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "Bitmap 不是独立类型，是 SETBIT/GETBIT/BITCOUNT/BITOP 作用在 String 上"},
+      {"id": "p2", "text": "用户 ID 当 offset 可做签到、连续打卡；百万位大约 125KB，远小于同等规模的 Set"},
+      {"id": "p3", "text": "空间由最大偏移决定，ID 稀疏会浪费；BITOP 可按天做 AND/OR 统计活跃"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "连续签到 7 天你怎么用 Bitmap 算"},
+      {"id": "d2", "intent": "用户 ID 到十亿且很稀疏，还适不适合 Bitmap"},
+      {"id": "d3", "intent": "和 Set、HyperLogLog 分别什么时候换"}
+    ],
+    "pitfalls": [
+      "把稀疏超大 ID 直接当 offset 撑出巨大 String",
+      "以为 Bitmap 能列出具体用户名单还零成本"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-stream",
+    "name": "Stream 与消费组",
+    "summary": "可持久的有序日志，消费组分担、PEL 待确认，至少一次投递，离线还能补读。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "XADD 追加带时间序 ID 的条目，XRANGE 可回放；可用 MAXLEN 限制长度避免无限涨"},
+      {"id": "p2", "text": "消费组里 XREADGROUP 领取后进 PEL，处理完 XACK；超时未确认用 XCLAIM/XAUTOCLAIM 转给别人"},
+      {"id": "p3", "text": "语义是至少一次，消费者必须幂等；比 Pub/Sub 可靠，比 Kafka 轻，堆积和路由复杂时仍应上专业 MQ"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "消费者宕机后未 ACK 的消息去哪了，怎么救"},
+      {"id": "d2", "intent": "为什么说 Stream 是至少一次而不是精确一次"},
+      {"id": "d3", "intent": "订单流水用 Stream 还是 Kafka，你怎么划界"}
+    ],
+    "pitfalls": [
+      "当 Kafka 用却不裁剪，Stream 把内存吃满",
+      "消费不幂等，XCLAIM 重投就重复下单"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-scan",
+    "name": "KEYS 与 SCAN",
+    "summary": "KEYS 一次扫完全库会堵住单线程；生产用游标 SCAN，结果可能重复、不保证快照。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "KEYS pattern 复杂度 O(N)，大数据量会长时间占住主线程，生产禁用"},
+      {"id": "p2", "text": "SCAN 带游标分批返回，游标回到 0 才结束；COUNT 只是工作量提示，单次可能空结果但游标未完"},
+      {"id": "p3", "text": "扫描期间增删的键可能漏或重复，客户端要用集合去重；集合内部对应 HSCAN/SSCAN/ZSCAN"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "线上要按前缀清 key，为什么不能 KEYS user:*"},
+      {"id": "d2", "intent": "SCAN 返回空数组是不是扫完了"},
+      {"id": "d3", "intent": "扫描结果重复了你会怎么处理"}
+    ],
+    "pitfalls": [
+      "在 redis-cli 对主库敲 KEYS * 排查问题",
+      "把 COUNT 当成精确分页大小"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-unlink",
+    "name": "DEL 与 UNLINK",
+    "summary": "DEL 在主线程同步释放内存，大 key 会卡；UNLINK 先摘键再后台回收。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "DEL 删除后立刻在主线程 free，小 key 无感，百万元素集合会明显停顿"},
+      {"id": "p2", "text": "UNLINK 先从键空间摘掉，键立即不可见，大块内存交给 lazyfree 后台线程"},
+      {"id": "p3", "text": "可配 lazyfree-lazy-user-del 让 DEL 行为接近 UNLINK；过期和淘汰也有对应 lazyfree 开关"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "删一个几百万 field 的 Hash，DEL 和 UNLINK 用户侧差在哪"},
+      {"id": "d2", "intent": "UNLINK 之后 INFO 里内存为什么没马上掉"},
+      {"id": "d3", "intent": "过期删除能不能也走异步释放"}
+    ],
+    "pitfalls": [
+      "对大 key 习惯性 DEL，把延迟尖刺当成网络抖动",
+      "以为 UNLINK 是异步摘键，删完还能再 GET 到"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-delay-queue",
+    "name": "ZSet 延迟队列",
+    "summary": "用到期时间当 score，轮询取出到期任务；实现简单，可靠投递仍要自己补。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "ZADD 以执行时间戳为 score，消费者 ZRANGEBYSCORE 取当前时间之前的任务再 ZREM"},
+      {"id": "p2", "text": "取和删必须 Lua 或 ZPOPMIN 一类原子操作，否则多消费者会抢同一条"},
+      {"id": "p3", "text": "没有 ACK/重试/死信，进程在取出后崩溃任务就丢；要可靠用 Stream 或专业延迟 MQ"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "订单 30 分钟未支付关单，ZSet 核心命令怎么写"},
+      {"id": "d2", "intent": "两个消费者同时扫到同一条怎么办"},
+      {"id": "d3", "intent": "和 Redisson 延迟队列、专业 MQ 你怎么选"}
+    ],
+    "pitfalls": [
+      "GET 到期元素后应用里再删，中间被别人拿走或重复执行",
+      "当可靠任务队列用却没有失败重试"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-rate-limit",
+    "name": "Redis 限流实现",
+    "summary": "固定窗口 INCR+TTL 最简单，滑动窗口用 ZSet，真正原子要 Lua；和网关限流分层。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis", "distributed"],
+    "key_points": [
+      {"id": "p1", "text": "固定窗口：按时间片 INCR，首次 EXPIRE；O(1) 但窗口交界会突刺"},
+      {"id": "p2", "text": "滑动日志用 ZSet 存请求时间戳，先裁掉窗口外再 ZCARD；更平滑，内存和命令更多"},
+      {"id": "p3", "text": "读-判-写必须 Lua 或单命令，否则并发下会超发；Redis 挂了要预先决定失败放行还是拒绝"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "接口 1 秒 100 次，固定窗口在第 59 秒和第 1 秒会怎样"},
+      {"id": "d2", "intent": "为什么限流逻辑要放进 Lua"},
+      {"id": "d3", "intent": "和网关限流、单机 Guava 怎么分工"}
+    ],
+    "pitfalls": [
+      "INCR 和 EXPIRE 分成两条，key 永不过期越积越大",
+      "只在单机内存计数，扩容后限额翻倍"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-aof-rewrite",
+    "name": "AOF 重写",
+    "summary": "不是压缩旧日志，而是按当前内存生成最短恢复命令，fork 子进程后原子替换。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "AOF 只追加，同一 key 改一万次文件就有一万条；重写按内存终态写出恢复所需的最少命令"},
+      {"id": "p2", "text": "BGREWRITEAOF fork 子进程写新文件，主进程继续服务并把重写期间的增量记下来，完成后合并并替换"},
+      {"id": "p3", "text": "混合持久化时新 AOF 前半是 RDB 基线、后半是增量命令，重启更快；Redis 7 用多文件加 manifest 管理"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "AOF 为什么会无限涨，重写到底重写的是什么"},
+      {"id": "d2", "intent": "重写期间新写入会不会丢"},
+      {"id": "d3", "intent": "混合持久化的文件长什么样"}
+    ],
+    "pitfalls": [
+      "以为重写是 gzip 压缩旧 AOF",
+      "重写高峰和业务高峰叠在一起还不留内存余量"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-aof-fsync",
+    "name": "AOF 刷盘策略",
+    "summary": "always 最安全最慢，everysec 约丢一秒是默认折中，no 交给操作系统。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "always：每条写命令 fsync，丢失窗口最小，吞吐和延迟最差"},
+      {"id": "p2", "text": "everysec：大约每秒刷一次，故障最多丢约 1 秒，是生产最常见配置"},
+      {"id": "p3", "text": "no：何时刷盘由 OS 决定，性能好但丢失不可控；即使 always 也不能替代备份"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "你们 AOF 用哪档，能接受丢多少"},
+      {"id": "d2", "intent": "everysec 真的最多丢一秒吗，还有什么例外"},
+      {"id": "d3", "intent": "纯缓存 Redis 还要不要开 AOF"}
+    ],
+    "pitfalls": [
+      "开了 AOF 就宣传零丢失",
+      "always 打满磁盘还怪 Redis 变慢却不查 fsync"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-cow-fork",
+    "name": "fork 与写时复制",
+    "summary": "BGSAVE/AOF 重写靠 fork 拿快照；写越多 COW 复制的脏页越多，内存会冲高峰。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "子进程继承父进程页表，看到 fork 那一刻的内存快照；主进程继续处理请求"},
+      {"id": "p2", "text": "父进程改页时内核复制出新页，写入越密、越分散，额外内存越高，可能逼近 used_memory 再翻一截"},
+      {"id": "p3", "text": "fork 本身要复制页表，数据集越大 latest_fork_usec 越长；要关透明大页、留内存余量、避开写高峰"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "bgsave 时请求还能写，那快照怎么保证一致"},
+      {"id": "d2", "intent": "为什么生成 RDB 时 RSS 会突然抬升"},
+      {"id": "d3", "intent": "latest_fork_usec 很高你怎么处理"}
+    ],
+    "pitfalls": [
+      "按 used_memory 把机器塞满，fork 时被 OOM Killer 杀掉",
+      "生产用 SAVE 而不是 BGSAVE"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-hash-tag",
+    "name": "Hash Tag 与跨槽",
+    "summary": "Cluster 多 key 命令必须同槽；用 {…} 指定哈希部分，但不要把所有流量打进一个 tag。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis", "distributed"],
+    "key_points": [
+      {"id": "p1", "text": "默认整段 key 做 CRC16；出现第一个非空 {tag} 时只对括号内计算槽"},
+      {"id": "p2", "text": "同槽才能 MSET、事务、Lua 多 key；否则 CROSSSLOT。订单明细和库存可写成 order:{1001}:*"},
+      {"id": "p3", "text": "tag 粒度过粗会让单槽、单节点过热，等于没分片；迁移期间还可能 TRYAGAIN"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Lua 里要改两个 key，Cluster 上报 CROSSSLOT 是为什么"},
+      {"id": "d2", "intent": "hash tag 怎么写，{user:1000}:cart 算哪一段"},
+      {"id": "d3", "intent": "所有业务都加 {app} 会怎样"}
+    ],
+    "pitfalls": [
+      "把整个业务前缀当成同一个 hash tag",
+      "以为 Cluster 会在节点之间代做多 key 事务"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-moved-ask",
+    "name": "MOVED 与 ASK",
+    "summary": "MOVED 是槽已换主人，要更新路由表；ASK 是迁移中的临时跳转，只本次有效。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis", "distributed"],
+    "key_points": [
+      {"id": "p1", "text": "MOVED slot host:port：该槽已稳定属于目标节点，客户端应改本地槽映射并重试"},
+      {"id": "p2", "text": "ASK：槽正在迁移、这个 key 已在目标节点；先发 ASKING 再访问，不要永久改映射"},
+      {"id": "p3", "text": "Cluster 不代理转发；频繁 MOVED 多半是客户端槽缓存过期，大量 ASK 说明正在扩缩容"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "收到 MOVED 和 ASK，客户端分别该做什么"},
+      {"id": "d2", "intent": "为什么 ASK 之后还要发 ASKING"},
+      {"id": "d3", "intent": "扩容时业务超时，你怎么判断是迁移还是故障"}
+    ],
+    "pitfalls": [
+      "把 ASK 也写进长期槽缓存，迁移完成后路由错乱",
+      "手写客户端不处理重定向，随机连一个节点就写"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-cache-aside",
+    "name": "Cache-Aside 与读写模式",
+    "summary": "旁路缓存最常见：读 miss 回源再写入，写走库再删缓存；Write-through/behind 各有代价。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis", "mysql"],
+    "key_points": [
+      {"id": "p1", "text": "Cache-Aside：应用先读 Redis，未命中查库再 SET；写更新数据库后删（或失效）缓存"},
+      {"id": "p2", "text": "Write-through 同时写缓存和库，缓存始终暖，但写路径变慢、要处理双写失败"},
+      {"id": "p3", "text": "Write-behind 先写缓存再异步落库，写延迟低，Redis 宕机可能丢已确认的写，只适合可丢的计数"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么写路径更常删缓存而不是直接更新缓存值"},
+      {"id": "d2", "intent": "Write-behind 丢数据发生在哪一步"},
+      {"id": "d3", "intent": "你们项目实际用的是哪一种"}
+    ],
+    "pitfalls": [
+      "写路径直接 SET 新值，和并发读回源的旧值打架",
+      "把旁路缓存的短暂不一致当成实现错误"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-multilevel-cache",
+    "name": "多级缓存",
+    "summary": "本地 Caffeine 挡热点，Redis 挡库；要处理失效、容量和一致性，不能只叠一层。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "读路径一般是本地 → Redis → DB；本地 TTL 要短，只放真正的热点"},
+      {"id": "p2", "text": "Redis 变更后本地会脏，可用短 TTL、版本号或 Pub/Sub 失效通知，接受秒级不一致"},
+      {"id": "p3", "text": "每台 JVM 一份本地缓存，总量翻倍、发布后要预热；本地满了按 LRU，不要当第二数据库"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "商品详情为什么还要加 Caffeine，只加 Redis 从库不够吗"},
+      {"id": "d2", "intent": "缓存更新了，别的机器本地怎么知道"},
+      {"id": "d3", "intent": "本地缓存把堆打满过吗，怎么限"}
+    ],
+    "pitfalls": [
+      "本地不设上限和过期，和 Redis 长期不一致",
+      "用 Pub/Sub 失效却当成可靠通知，丢消息后一直脏读"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-rehash",
+    "name": "渐进式 rehash",
+    "summary": "哈希表扩容不一次搬完，日常请求顺带搬槽，避免一次性阻塞。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "dict 维护 ht[0] 和 ht[1]；负载因子过高或过低时分配新表，进入 rehash 状态"},
+      {"id": "p2", "text": "之后每次增删改查顺带把若干桶从旧表迁到新表，直到搬完再丢掉旧表"},
+      {"id": "p3", "text": "rehash 期间查找可能要查两张表；有后台定时推进，但突然写入暴涨仍会拉高 CPU"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么不一次性把哈希表扩完"},
+      {"id": "d2", "intent": "rehash 进行中 GET 要查几张表"},
+      {"id": "d3", "intent": "瞬时写入很多 key，会不会还是被 rehash 拖慢"}
+    ],
+    "pitfalls": [
+      "把渐进式 rehash 说成完全无成本",
+      "和 Java HashMap 的一次性扩容、链表树化混为一谈"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-slowlog",
+    "name": "慢查询与延迟排查",
+    "summary": "先看 SLOWLOG 和 LATENCY，再查大 key、阻塞命令、fork 和宿主机，不要一上来就重启。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "SLOWLOG 记录超过 slowlog-log-slower-than 的命令；INFO commandstats 看累计耗时"},
+      {"id": "p2", "text": "LATENCY DOCTOR/LATEST 能标出 fork、AOF、过期循环等事件，不一定是业务命令慢"},
+      {"id": "p3", "text": "MONITOR 开销极大只可短时；CPU 100% 先分清主线程、IO 线程还是别的进程，保留慢日志再限流"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "线上 P99 突然升高，你按什么顺序查"},
+      {"id": "d2", "intent": "SLOWLOG 是空的但延迟很高，还可能是什么"},
+      {"id": "d3", "intent": "MONITOR 为什么不能一直开着"}
+    ],
+    "pitfalls": [
+      "延迟升高第一反应重启 Redis，现场全没",
+      "只看命令耗时，不看 fork、swap、透明大页"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-wait",
+    "name": "WAIT 与复制丢失窗口",
+    "summary": "复制默认异步，主库先回 OK；WAIT 能缩小窗口，但不是跨节点提交。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis", "distributed"],
+    "key_points": [
+      {"id": "p1", "text": "写成功只表示主库本地已执行，从库可能还没收到；主挂后提升从库会丢这段"},
+      {"id": "p2", "text": "WAIT N timeout 阻塞到至少 N 个副本确认收到，超时仍可能少于 N"},
+      {"id": "p3", "text": "这不是同步提交，副本 ACK 后仍可能立刻故障；min-replicas-to-write 则是副本不够就拒写"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "客户端已经拿到 OK，主库马上宕机，从库一定有这条吗"},
+      {"id": "d2", "intent": "WAIT 和 MySQL 半同步差在哪"},
+      {"id": "d3", "intent": "什么业务你会在写完后调 WAIT"}
+    ],
+    "pitfalls": [
+      "把主从当成同步强一致",
+      "WAIT 超时当成功，继续当数据已经落从库"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-sdown-odown",
+    "name": "主观下线与客观下线",
+    "summary": "单个哨兵判定是 SDOWN，达到 quorum 才是 ODOWN；真正切主要再选领导者。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis", "distributed"],
+    "key_points": [
+      {"id": "p1", "text": "SDOWN：某个 Sentinel 在 down-after-milliseconds 内 ping 不通，只是它自己的看法"},
+      {"id": "p2", "text": "ODOWN：同意主挂了的哨兵数达到 quorum，才进入故障转移流程"},
+      {"id": "p3", "text": "之后哨兵间再选一个领导者去执行切主；quorum 和多数派投票不是同一件事，部署至少 3 个哨兵"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "一个哨兵说主挂了会立刻切主吗"},
+      {"id": "d2", "intent": "quorum=2 和部署 3 个哨兵，网络断一个会怎样"},
+      {"id": "d3", "intent": "选新主时从库优先级、偏移、runid 怎么排"}
+    ],
+    "pitfalls": [
+      "把 SDOWN 当成已经完成故障转移",
+      "两个哨兵加 quorum=2，分区时谁也选不成"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-cluster-slots",
+    "name": "为何是 16384 个槽",
+    "summary": "槽数量是 Gossip 心跳体积和分片粒度的折中，不是 CRC16 位数算出来的。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis", "distributed"],
+    "key_points": [
+      {"id": "p1", "text": "16384 槽的位图只要 2048 字节，能塞进节点间心跳，Gossip 成本可控"},
+      {"id": "p2", "text": "槽够多，常见集群规模下迁移和均衡都方便；Cluster 预期主节点数量有上限，不必百万槽"},
+      {"id": "p3", "text": "扩容搬的是槽而不是按取模重哈希全部 key；槽太少迁移粒度粗，太多则元数据膨胀"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么不是 65536 槽，CRC16 不是 16 位吗"},
+      {"id": "d2", "intent": "心跳里为什么要带槽位图"},
+      {"id": "d3", "intent": "加一个主节点实际搬的是什么"}
+    ],
+    "pitfalls": [
+      "回答成 CRC16 最大就是 16384",
+      "把槽数和数据库 SELECT 的 16 个逻辑库搞混"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-db-select",
+    "name": "逻辑库与键前缀",
+    "summary": "SELECT 0～15 只是同进程命名空间，不是隔离也不是分片；Cluster 只能用 0 号库。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "默认 16 个逻辑库共享内存、持久化和单线程，FLUSHDB 只清当前库，FLUSHALL 清全部"},
+      {"id": "p2", "text": "连接池和 Cluster 几乎都不支持 SELECT，用 1 号库存会话、0 号库存缓存会在上集群时卡住"},
+      {"id": "p3", "text": "生产习惯全部放 DB 0，用 cache:、session: 这类前缀分隔，监控和 SCAN 也更好做"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "用 DB 1 隔离缓存和锁有没有问题"},
+      {"id": "d2", "intent": "Cluster 为什么不让 SELECT"},
+      {"id": "d3", "intent": "键名前缀你怎么定，会不会和 hash tag 冲突"}
+    ],
+    "pitfalls": [
+      "把逻辑库当成租户隔离或多实例",
+      "多 DB 混用导致连接复用时串库"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-keepttl",
+    "name": "SET 会清掉 TTL",
+    "summary": "普通 SET 覆盖值时过期时间一起没了；要保留 TTL 用 KEEPTTL，或写完再 EXPIRE。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "SET key value 会重置过期，TTL 从有时限变成 -1 永不过期，缓存 key 会泄漏"},
+      {"id": "p2", "text": "SET … KEEPTTL 只改值保留剩余寿命；也可 SET EX/PX 在写入时带上新的过期"},
+      {"id": "p3", "text": "GET 再 SET 中间别人可能改 TTL；需要原子时用一条 SET 选项或 Lua"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "缓存刷新后 key 怎么变成永不过期的"},
+      {"id": "d2", "intent": "KEEPTTL 和重新 EXPIRE 你怎么选"},
+      {"id": "d3", "intent": "TTL 返回 -1 和 -2 分别是什么"}
+    ],
+    "pitfalls": [
+      "定时刷新缓存用 SET，把 TTL 冲掉后内存只涨不掉",
+      "先 GET TTL 再 SET 再 EXPIRE，三步非原子"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-list-reliable-queue",
+    "name": "List 可靠队列",
+    "summary": "BRPOP 是至多一次，取出即从 List 消失；要可靠用备份 List 或改 Stream。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "LPUSH+BRPOP 实现简单阻塞队列，消费者崩溃则消息已弹出，属于至多一次"},
+      {"id": "p2", "text": "RPOPLPUSH/BLMOVE 弹出同时写入 processing 列表，处理完再删备份，崩溃可回放"},
+      {"id": "p3", "text": "备份 List 仍要自己做超时回收和重试；要消费组、ACK、裁剪，直接用 Stream"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "worker 在 BRPOP 之后、业务完成之前挂了，消息还在吗"},
+      {"id": "d2", "intent": "RPOPLPUSH 解决了什么，还缺什么"},
+      {"id": "d3", "intent": "什么时候从 List 队列迁到 Stream"}
+    ],
+    "pitfalls": [
+      "把 List 队列说成不会丢消息",
+      "processing 列表不做超时扫描，失败任务永远卡着"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-incr",
+    "name": "INCR 原子计数",
+    "summary": "单命令完成读改写，计数、限流、库存预减都靠它；应用里 GET+SET 会丢更新。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "INCR/DECR/INCRBY/HINCRBY 在单线程里一次完成，两个客户端不会都读到同一个旧值"},
+      {"id": "p2", "text": "适合浏览量、验证码次数；要带上限或和库存校验一起做，就要 Lua 把判断包进去"},
+      {"id": "p3", "text": "INCR 对不存在的 key 当 0 再加；对非数字 String 会报错；持久化策略决定重启后计数还在不在"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么不能 GET 到应用里加一再 SET 回去"},
+      {"id": "d2", "intent": "秒杀预减库存只 INCR 够不够"},
+      {"id": "d3", "intent": "计数 Redis 挂了或被淘汰，你怎么和数据库对"}
+    ],
+    "pitfalls": [
+      "把 INCR 当数据库事务，跨多个 key 的库存扣减不包 Lua",
+      "计数 key 不设 TTL 也不持久，重启或淘汰后对不上账"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-cluster-failover",
+    "name": "Cluster 故障转移",
+    "summary": "节点互相 PING，多数主节点认为某主不可达后，它的从库竞选接管槽。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis", "distributed"],
+    "key_points": [
+      {"id": "p1", "text": "Cluster 不靠 Sentinel；节点走 Gossip，超过半数主节点将某主标为 FAIL 才进入故障转移"},
+      {"id": "p2", "text": "该主的从库按复制偏移等条件竞选，胜者接管原槽并广播配置，客户端随后收到 MOVED"},
+      {"id": "p3", "text": "主从都挂则对应槽不可用，集群可能进入 fail 状态；每主至少一从，并分散故障域"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Cluster 里谁来宣布某个主节点死了"},
+      {"id": "d2", "intent": "从库怎么被选成新主，旧主回来呢"},
+      {"id": "d3", "intent": "某个分片主从全挂，整个集群还能读写吗"}
+    ],
+    "pitfalls": [
+      "Cluster 还再额外部一套哨兵",
+      "只部主不分从，挂一个分片就不可用还以为有高可用"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-thp-swap",
+    "name": "透明大页与 swap",
+    "summary": "THP 让 fork 极慢，swap 让延迟掉崖；生产要关 THP、禁止换页并留内存余量。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "透明大页把页表项合并，fork 复制页表和 COW 成本暴涨，表现为 latest_fork_usec 巨大"},
+      {"id": "p2", "text": "mem_fragmentation_ratio < 1 或看到 used_memory_swap，说明已经在用磁盘当内存，P99 会崩"},
+      {"id": "p3", "text": "生产关闭 THP、vm.overcommit_memory=1、足够 maxmemory 余量，避免 Redis 和宿主机抢内存"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "bgsave 时 Redis 卡住几百毫秒，先查什么操作系统项"},
+      {"id": "d2", "intent": "碎片率小于 1 说明什么"},
+      {"id": "d3", "intent": "overcommit_memory 为什么常被提到"}
+    ],
+    "pitfalls": [
+      "只调 Redis 配置，不查宿主机 THP 和 swap",
+      "maxmemory 等于机器内存，fork 瞬间被 OOM"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-warmup",
+    "name": "缓存预热",
+    "summary": "空缓存或重启后流量会打穿数据库；按热点提前加载，并控制并发回源。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis", "mysql"],
+    "key_points": [
+      {"id": "p1", "text": "发布、扩容、Redis 重启后缓存是冷的，同一时刻 miss 会打满数据库，像一次击穿加雪崩"},
+      {"id": "p2", "text": "预热按访问日志或排行把热点 key 提前 SET；全量加载既慢又占内存，只热真正的头部品"},
+      {"id": "p3", "text": "预热期间仍要互斥重建、限流和随机 TTL，避免刚热完又集体过期"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Redis 刚重启，你怎么避免数据库被打穿"},
+      {"id": "d2", "intent": "预热数据从哪来，全表扫还是访问日志"},
+      {"id": "d3", "intent": "预热要花 10 分钟，这 10 分钟流量怎么办"}
+    ],
+    "pitfalls": [
+      "上线只扩容应用不预热缓存",
+      "把整库灌进 Redis 当预热，内存立刻打满"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-logical-expire",
+    "name": "逻辑过期与互斥重建",
+    "summary": "击穿时要么加锁只让一人回源，要么数据不过期、用逻辑时间异步刷新。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "互斥重建：miss 时 SET NX 一把短锁，持锁者查库写回，其他人稍等再读缓存或降级"},
+      {"id": "p2", "text": "逻辑过期：Redis 里的值不设 TTL，另存 expireAt；到期仍返回旧值，后台异步刷新"},
+      {"id": "p3", "text": "逻辑过期会脏读窗口，换的是数据库不被打穿；锁要设过期防止持锁者挂掉后没人重建"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "热点 key 过期瞬间，互斥锁具体怎么写"},
+      {"id": "d2", "intent": "逻辑过期为什么还能返回数据"},
+      {"id": "d3", "intent": "重建失败或锁没释放，你会怎样兜底"}
+    ],
+    "pitfalls": [
+      "互斥锁不设过期，重建线程挂了变成永久 miss",
+      "逻辑过期当成强一致，下游当实时库存用"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-data-loss",
+    "name": "哪些情况会丢数据",
+    "summary": "高可用不等于零丢失；快照窗口、AOF 刷盘、异步复制、脑裂和淘汰都会丢。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis", "distributed"],
+    "key_points": [
+      {"id": "p1", "text": "只开 RDB 会丢上次快照后的写入；AOF everysec 大约丢一秒，no 更不可控"},
+      {"id": "p2", "text": "异步复制在主库已 ACK、从库未收到时切主会丢；脑裂时旧主那段写在降级后被覆盖"},
+      {"id": "p3", "text": "maxmemory 淘汰、key 过期、误 DEL、磁盘损坏都是丢失；重要数据要备份和业务幂等，不能只靠 Redis"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "面试里说 Redis 会丢数据，你能举哪三类"},
+      {"id": "d2", "intent": "哨兵切主成功了，为什么还会丢刚刚写入的订单"},
+      {"id": "d3", "intent": "你们哪些数据敢只放 Redis，哪些必须回源数据库"}
+    ],
+    "pitfalls": [
+      "把开启持久化、主从、哨兵叠加后当成不会丢",
+      "把 Redis 当唯一账本还不做备份演练"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-psync",
+    "name": "PSYNC 与无盘复制",
+    "summary": "断线优先 backlog 增量；对不上才全量。全量可以不落盘，直接把 RDB 传给从库。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis", "distributed"],
+    "key_points": [
+      {"id": "p1", "text": "PSYNC 带 replication ID 和 offset；积压缓冲区还留得下缺口就增量，否则全量"},
+      {"id": "p2", "text": "全量要生成并传输 RDB，主库磁盘慢或多个从库同时全量时会把主库打满"},
+      {"id": "p3", "text": "无盘复制让子进程直接把快照打到 socket，减轻主库磁盘；从库仍要加载进内存，网络要够"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "从库断开 3 秒和断开 3 小时，分别走哪条同步"},
+      {"id": "d2", "intent": "repl-backlog-size 太小会怎样"},
+      {"id": "d3", "intent": "无盘复制解决的是主库哪一端的压力"}
+    ],
+    "pitfalls": [
+      "backlog 默认太小，网络抖动就反复全量",
+      "把无盘复制理解成从库也不占内存"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "redis-command-complexity",
+    "name": "命令复杂度",
+    "summary": "单点操作多是 O(1) 或 O(log N)；KEYS、SMEMBERS、大范围 LRANGE 是 O(N)，大 value 也会堵。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["redis"],
+    "key_points": [
+      {"id": "p1", "text": "GET/SET、Hash/Set 单字段平均 O(1)；ZADD/ZRANK 约 O(log N)，范围查询还要加上返回个数 M"},
+      {"id": "p2", "text": "KEYS、SMEMBERS、HGETALL、LRANGE 0 -1、大集合 SUNION 都是 O(N)，生产要 SCAN 或限制返回量"},
+      {"id": "p3", "text": "复杂度是起点：O(1) 的 GET 若 value 几十 MB，CPU 和网络照样阻塞单线程"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "HGETALL 一个十万 field 的 Hash，复杂度你怎么说"},
+      {"id": "d2", "intent": "ZRANGE 0 99 和 ZRANGE 0 -1 差在哪"},
+      {"id": "d3", "intent": "O(1) 的命令为什么还是把延迟打高了"}
+    ],
+    "pitfalls": [
+      "只背 O(1) 不管返回体大小",
+      "线上对大 Set 用 SMEMBERS 当查询接口"
+    ],
+    "status": "published"
   }
 ]

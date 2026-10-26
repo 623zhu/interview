@@ -573,5 +573,672 @@
       "跨 Agent 传递原始密钥和完整数据库结果"
     ],
     "status": "published"
+  },
+  {
+    "key": "agent-langchain-vs-langgraph",
+    "name": "LangChain、LangGraph 与 LangSmith",
+    "summary": "LangChain 提供模型和工具组件；LangGraph 编排有状态循环；LangSmith 只观测不执行。三者互补，不是互相替换。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "LangChain 是组件层：ChatModel、工具、消息、LCEL、create_agent；适合线性 RAG、单次工具调用和标准 ReAct 循环"},
+      {"id": "p2", "text": "LangGraph 是编排运行时：共享 State、节点/边、循环、并行、持久化和中断，用来把不确定的模型步骤和确定的业务步骤画在一张图里"},
+      {"id": "p3", "text": "LangSmith 记 trace、评估和监控，不控制下一步走哪。说 LangGraph 取代了 LangChain 是常见错答"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "一个 retrieve-then-answer 的问答，要不要上 LangGraph"},
+      {"id": "d2", "intent": "create_agent 底层是不是已经在用 LangGraph"},
+      {"id": "d3", "intent": "你们线上 trace 看什么，出了错怎么回放到某个节点"}
+    ],
+    "pitfalls": [
+      "把三件套说成三个互斥框架",
+      "线性流水线硬套一张复杂图"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-langgraph-stategraph",
+    "name": "StateGraph 节点与边",
+    "summary": "节点读 State 返回部分更新；普通边固定下一跳，条件边按路由函数分支或成环。compile 之后才能 invoke。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "节点是函数：入参当前 State，只返回改动过的字段；整份 State 原样扔回去容易覆盖并行分支的更新"},
+      {"id": "p2", "text": "START/END 是边界；add_edge 固定走向，add_conditional_edges 用路由函数返回下一个节点名或 END，循环和分支都靠它"},
+      {"id": "p3", "text": "StateGraph 只是 builder，必须 compile() 得到可 invoke/stream 的图；拓扑在 compile 时校验"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "画一个「模型 → 有 tool_calls 就跑工具否则结束」的最小图"},
+      {"id": "d2", "intent": "节点返回了整个 State，并行两个节点会怎样"},
+      {"id": "d3", "intent": "流程控制该写在条件边里，还是再调一次模型选边"}
+    ],
+    "pitfalls": [
+      "用 LLM 当路由器去选本可用规则判断的边",
+      "忘记 compile，直接拿 builder invoke"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-langgraph-state",
+    "name": "State 与 Reducer",
+    "summary": "每个字段是一条 channel；无 reducer 则覆盖，有 reducer 则合并。聊天历史用 add_messages，不要用裸 list 相加。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "State 用 TypedDict/Pydantic 定义，是一次运行的唯一事实来源；业务字段（ticket_id、approved）应显式列出，不要全塞进 messages"},
+      {"id": "p2", "text": "默认 LastValue 覆盖；Annotated[list, operator.add] 做追加。并行节点写同一 key 必须有 reducer，否则冲突"},
+      {"id": "p3", "text": "add_messages 会按 id 去重/替换，并支持 RemoveMessage；operator.add 只会把同 id 消息再追加一份"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "两个节点同时往 notes 里写，State 怎么定义才对"},
+      {"id": "d2", "intent": "想改历史里某条 AI 消息而不是再 append，靠什么"},
+      {"id": "d3", "intent": "哪些数据该放 State，哪些该放 config 或外部数据库"}
+    ],
+    "pitfalls": [
+      "messages 没用 add_messages，重跑把对话复制两遍",
+      "把数据库主键、密钥放进 State 还随 trace 上传"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-langgraph-edges",
+    "name": "条件边与 Command",
+    "summary": "条件边适合固定拓扑上的路由；Command 能在节点里同时更新 State 并指定下一跳，适合动态跳转。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "条件边的路由函数应尽量确定性：看 tool_calls、校验结果、重试次数，不要为「下一步问什么」再调一次模型"},
+      {"id": "p2", "text": "Command(update=..., goto=...) 让节点自己决定走哪，少一层边表；多 Agent 交接、审批后分支常用"},
+      {"id": "p3", "text": "能用规则的边不要交给 LLM：贵、慢、还不稳定。模型只负责需要语义判断的那一跳"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "评估完要追问还是出报告，这跳边该规则还是模型"},
+      {"id": "d2", "intent": "什么场景条件边写起来很丑，该改 Command"},
+      {"id": "d3", "intent": "路由函数返回了不存在的节点名会怎样"}
+    ],
+    "pitfalls": [
+      "整张图的走向都让模型输出 next_node",
+      "条件边和 Command 混用把同一跳写了两遍"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-langgraph-tool-loop",
+    "name": "LangGraph 工具循环",
+    "summary": "模型节点 bind_tools 产出 tool_calls，ToolNode 执行并写回 ToolMessage，条件边决定再想还是结束。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "标准环：agent 节点调绑定了工具的模型 → 若有 tool_calls 去 tools 节点 → 工具结果进 messages → 再回 agent，直到模型直接给最终回复"},
+      {"id": "p2", "text": "ToolNode 读最后一条 AIMessage 的 tool_calls，真正执行函数，返回对应 ToolMessage；模型自己并不打 API"},
+      {"id": "p3", "text": "必须给最大步数或重复调用检测；工具报错应写成 ToolMessage 让模型改参数，而不是把整个图画崩"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "tools_condition 看的是 State 里哪一段"},
+      {"id": "d2", "intent": "一次回复里多个 tool_calls，ToolNode 会串行还是并行"},
+      {"id": "d3", "intent": "工具超时你写回什么，避免模型原地重试同一错误"}
+    ],
+    "pitfalls": [
+      "把工具函数直接写在模型节点里，图无法单独测工具",
+      "没有步数上限的 agent↔tools 死循环"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-langgraph-checkpointer",
+    "name": "Checkpointer 与 thread_id",
+    "summary": "每个 super-step 存一份 State 快照，按 thread_id 分组。它是恢复和 HITL 的手段，不一定是业务档案。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "compile(checkpointer=...) 后 invoke 必须带 configurable.thread_id；同一 id 接着跑，换 id 就是新会话"},
+      {"id": "p2", "text": "开发用 InMemorySaver，进程一重启就没了；生产用 Postgres 等持久实现，并做保留和清理"},
+      {"id": "p3", "text": "业务事实（订单、面试场次）仍应落自己的数据库。Checkpointer 解决图怎么暂停/恢复，不替代系统源"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "上线后所有对话消失，最常见原因是什么"},
+      {"id": "d2", "intent": "thread_id 用用户 id 还是每次请求一个，差别在哪"},
+      {"id": "d3", "intent": "什么系统不该把 Checkpointer 当主存储"}
+    ],
+    "pitfalls": [
+      "生产用内存 Checkpointer",
+      "用 Checkpointer 替代订单表、会话表"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-langgraph-http-turn",
+    "name": "一次请求跑完一张图",
+    "summary": "面向用户的多轮对话不要把图挂起等下一次 HTTP。每轮从数据库组装 State，ainvoke 一次，写回再返回。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "对的：evaluate → decide → ask → persist → return。错的：ask 之后在图里等待用户下一次输入"},
+      {"id": "p2", "text": "跨请求状态放 MySQL/业务库；LangGraph 只编排这一次请求内部的节点。LangSmith 的 thread_id 可以等于业务 session_id 方便把多条 trace 串起来"},
+      {"id": "p3", "text": "需要 HITL 或跨小时恢复时才上 Checkpointer。普通同步 API 用无 checkpointer 的短图更简单、更好测"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "模拟面试每提交一次回答，图应该在哪停"},
+      {"id": "d2", "intent": "不用 Checkpointer，下一轮要的进度从哪读"},
+      {"id": "d3", "intent": "什么任务才值得把图挂起几天等审批"}
+    ],
+    "pitfalls": [
+      "把整场多轮对话做成一张不结束的图",
+      "图在节点里 sleep 或轮询用户"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-langgraph-interrupt",
+    "name": "interrupt 与人工审批",
+    "summary": "节点里调用 interrupt 会存状态并暂停；之后用同一 thread 以 Command(resume=...) 恢复。恢复会从头重跑该节点。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "动态 interrupt(payload) 适合生产审批；compile 时的 interrupt_before/after 是静态断点，偏调试"},
+      {"id": "p2", "text": "必须有 Checkpointer 和 thread_id。resume 的值成为 interrupt() 的返回值，暂停期间图不跑"},
+      {"id": "p3", "text": "恢复时整个节点从函数开头再执行，interrupt 之前的代码必须幂等；不要用裸 try/except 把 interrupt 的异常吃掉"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "退款超过阈值要人批，节点怎么写"},
+      {"id": "d2", "intent": "为什么 interrupt 前面不能先发一封邮件"},
+      {"id": "d3", "intent": "静态断点和动态 interrupt 你怎么选"}
+    ],
+    "pitfalls": [
+      "resume 后重复执行了 interrupt 前的写操作",
+      "catch Exception 把暂停机制抓没了"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-langgraph-idempotent",
+    "name": "恢复与外部副作用",
+    "summary": "节点可能因重试、崩溃恢复、interrupt 恢复而执行多次。对外写操作必须带幂等键，先记 pending 再提交。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "Checkpointer 只能恢复图状态，不能收回已经发出去的邮件或扣款"},
+      {"id": "p2", "text": "写操作单独成节点，interrupt 放在真正 commit 之前；用 thread_id+action_id 当幂等键，成功则写回 State 并跳过"},
+      {"id": "p3", "text": "下游不支持幂等时，在本系统建 action 表：同一键只 commit 一次，未知则查对端或转人工"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "崩溃恢复后 EHR 出现两份病历草稿，根因是什么"},
+      {"id": "d2", "intent": "画 prepare → checkpoint → commit 的节点切分"},
+      {"id": "d3", "intent": "支付 API 没有 idempotency key，你怎么兜"}
+    ],
+    "pitfalls": [
+      "在 interrupt 同一节点的前半段就调用了外部写接口",
+      "认为图恢复等于事务回滚"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-langgraph-send",
+    "name": "Send 与 Map-Reduce",
+    "summary": "Send 在运行时为每个元素派一个节点执行；汇聚字段必须有 reducer。一路失败不要拖死整张图。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "路由函数返回 [Send(\"worker\", {\"item\": x}) ...]，数量运行时才知道，适合对列表并行处理"},
+      {"id": "p2", "text": "worker 写入的列表字段要用 operator.add 一类 reducer，否则并行更新会互相覆盖"},
+      {"id": "p3", "text": "某一路超时应隔离：记录失败项、设定期限，不要让整张索赔图卡死；必要时限流并发度"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "五份材料并行质检，图怎么扇出再汇总"},
+      {"id": "d2", "intent": "为什么 worker 的输出列表不配 reducer 会丢结果"},
+      {"id": "d3", "intent": "其中一路超时，你让整单失败还是部分成功"}
+    ],
+    "pitfalls": [
+      "用固定边复制 N 个节点来模拟动态列表",
+      "扇出没有上限，一次 Send 出几百路打爆模型配额"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-langgraph-subgraph",
+    "name": "子图",
+    "summary": "把一段独立 StateGraph 当成父图的一个节点；State 结构可以不同，靠输入输出映射衔接。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "检索、审批、某个专家 Agent 适合做成子图，父图只关心它的入口参数和产出"},
+      {"id": "p2", "text": "子图可以有自己的 State、甚至自己的 Checkpointer；和父图字段不对齐时要显式转换"},
+      {"id": "p3", "text": "复用和隔离是收益；代价是调试链路变长，要在 LangSmith 里能点进子图 span"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "什么时候抽子图，什么时候只是普通节点"},
+      {"id": "d2", "intent": "子图 State 有 messages，父图也有，怎么避免串台"},
+      {"id": "d3", "intent": "子图失败，父图怎么降级"}
+    ],
+    "pitfalls": [
+      "子图和父图共享可变对象导致隐蔽串状态",
+      "一层套一层子图，主流程再也看不懂"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-langgraph-supervisor",
+    "name": "Supervisor 与 Handoff",
+    "summary": "Supervisor 由中心模型派活并回收结果；Handoff/Swarm 是对等交接。中心清晰但易成瓶颈，对等灵活但容易互相踢皮球。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "Supervisor：管理者节点看 State，把任务 Command/Send 给专家子图，再汇总；适合路由类别清楚的客服、运维"},
+      {"id": "p2", "text": "Handoff：当前 Agent 把控制权交给另一个，适合需要连续上下文的对话式协作"},
+      {"id": "p3", "text": "要防循环委派和重复劳动：记录已尝试的专家、限制 hop 次数、冲突时升级人工"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "网络故障总被派给数据库 Agent，你怎么查 Supervisor 的输入"},
+      {"id": "d2", "intent": "什么任务不该 Supervisor，该线性流水线"},
+      {"id": "d3", "intent": "两个专家互相交接三次还没结果，怎么刹车"}
+    ],
+    "pitfalls": [
+      "Supervisor 自己也去调所有工具，专家形同虚设",
+      "没有 hop 上限的对等交接"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-langgraph-streaming",
+    "name": "LangGraph 流式输出",
+    "summary": "聊天 UI 要流 token 或消息，不要等整张图结束再吐。不同 stream mode 看到的粒度不一样。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "values/updates 看 State 快照；messages/custom 更适合把模型增量推给前端；SSE 要把队列和节点内的模型流对上"},
+      {"id": "p2", "text": "先把最终回复流给用户，工具进度用独立事件，避免 15 秒空白后整段弹出"},
+      {"id": "p3", "text": "中断、错误也要有流事件；代理缓冲 SSE 时要用逐 token 或禁用缓冲，否则流式形同虚设"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "面试下一问要按字打出，图的哪个节点往 SSE 写"},
+      {"id": "d2", "intent": "stream mode 选 values 和 messages 差别是什么"},
+      {"id": "d3", "intent": "网关把 SSE 攒齐再发给浏览器，你怎么处理"}
+    ],
+    "pitfalls": [
+      "invoke 完再把完整字符串发给前端还叫流式",
+      "把工具的 JSON 中间态当作用户可见回复流出去"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-langsmith",
+    "name": "LangSmith 观测",
+    "summary": "每次 invoke 形成 run tree：节点入参出参、耗时、token。用它排错和回归，不要当业务日志库。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "打开 tracing 后每个节点是 span，能看 Prompt、工具参数、token 和延迟；thread_id 把同一会话的多次 invoke 串起来"},
+      {"id": "p2", "text": "评估集 + LLM-as-Judge 做回归；改图或改提示先在数据集上比，再灰度"},
+      {"id": "p3", "text": "trace 里不要带完整用户隐私和密钥；业务审计仍写自己的日志表"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "线上一次乱调工具，你在 LangSmith 先点开哪"},
+      {"id": "d2", "intent": "token 一夜涨三倍，看哪些 run 指标"},
+      {"id": "d3", "intent": "不用 LangSmith 时，最小可用观测你怎么做"}
+    ],
+    "pitfalls": [
+      "出了问题只能让用户截图对话",
+      "把 Prompt 和身份证号一起打进 trace"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-langgraph-overkill",
+    "name": "何时不用 LangGraph",
+    "summary": "单次模型调用或固定线性链用函数/LCEL 即可。有循环、审批、要恢复或多种确定性步骤夹模型时再上图。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "分类、摘要、retrieve-then-answer 没有分支和暂停，不必上图运行时"},
+      {"id": "p2", "text": "标准工具循环可先 create_agent；要自定义分支、并行扇出、多 Agent 或夹校验/写库节点，再手写 StateGraph"},
+      {"id": "p3", "text": "跨天的人工队列、支付补偿有时更适合工作流引擎（Temporal 等）；LangGraph 强在把 LLM 步骤和业务步骤编在一起"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "架构问 LangGraph、create_agent 还是 Step Functions，你怎么答"},
+      {"id": "d2", "intent": "你们项目里哪段不该画成图"},
+      {"id": "d3", "intent": "已经用 Temporal 了，还要 LangGraph 吗"}
+    ],
+    "pitfalls": [
+      "简历上每个 LLM 调用都写了 LangGraph",
+      "用图去编排与模型无关的纯 ETL"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-compile-once",
+    "name": "图的生命周期",
+    "summary": "进程启动时 compile 一次并挂到应用状态；请求里不要重建图。节点里继续用现有 LLM 客户端。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "compile 会校验拓扑、绑定 Checkpointer 和中断配置，放在 FastAPI 启动事件里做一次"},
+      {"id": "p2", "text": "每请求 ainvoke(state, config)，不要在 handler 里 StateGraph() 再 compile，既慢又让热更新行为难以预期"},
+      {"id": "p3", "text": "节点复用项目里的 AsyncOpenAI 等客户端，不必再包一层 ChatModel，除非你确实要用 LCEL 的统一接口"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么高并发下每次请求 compile 会出事"},
+      {"id": "d2", "intent": "改了节点代码要不要重启进程"},
+      {"id": "d3", "intent": "图对象和数据库 session 怎么注入节点，避免全局可变状态"}
+    ],
+    "pitfalls": [
+      "在请求路径上 new StateGraph",
+      "节点闭包捕获了过期的配置或过期的 DB session"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-plan-execute",
+    "name": "Plan-and-Execute",
+    "summary": "先一次性写出计划再逐步执行，适合步骤稳定的长任务；中途观察若打脸，要允许改计划。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "Planner 产出有序列表，Executor 按步调工具；和 ReAct 边想边做不同，减少每步都重新规划的 token"},
+      {"id": "p2", "text": "环境会变：检索为空、API 报错时要有 Replan，否则死守开场清单"},
+      {"id": "p3", "text": "步骤清晰的调研、数据管道适合它；工具结果高度不确定时 ReAct 更稳"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "写竞品调研，Plan-and-Execute 和 ReAct 各怎么走"},
+      {"id": "d2", "intent": "第 3 步失败，你重做一步还是整表重规划"},
+      {"id": "d3", "intent": "计划写得很细却过时了，怎么发现"}
+    ],
+    "pitfalls": [
+      "把计划当不可变合同，观察与计划冲突也不改",
+      "每一步都再请 Planner，退回昂贵的 ReAct"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-lcel",
+    "name": "LCEL",
+    "summary": "Runnable 用 | 串成链，自带 invoke/stream/batch。线性流水线先用 LCEL，有环再上图。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "prompt | model | parser 得到同一个 Runnable 接口，stream 和 batch 免费获得"},
+      {"id": "p2", "text": "适合固定顺序：检索→拼提示→生成→解析 JSON；分支和循环表达力不够"},
+      {"id": "p3", "text": "LangGraph 节点内部也可以调一条 LCEL 链，图负责走向，链负责这一步怎么调模型"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "抽字段填 Pydantic，为什么可能不需要图"},
+      {"id": "d2", "intent": "LCEL 里怎么做最简单的分流"},
+      {"id": "d3", "intent": "链和图你怎么在一个服务里并存"}
+    ],
+    "pitfalls": [
+      "用 LCEL 硬写 while 工具循环",
+      "为了「用上框架」把三行代码做成十条管道"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-bind-tools",
+    "name": "bind_tools 与工具 Schema",
+    "summary": "把 JSON Schema 交给模型，它只填参数；Schema 含糊就会乱调。并行 tool_calls 要能并发执行。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "model.bind_tools(tools) 把名称、描述、参数类型写入请求；描述是模型选工具的主要依据，比函数名更重要"},
+      {"id": "p2", "text": "必填项、枚举、范围要写进 schema；少给万能 query:str，否则模型会把整段用户原话塞进去"},
+      {"id": "p3", "text": "一次 AIMessage 可带多个 tool_calls，独立的应并行跑，有依赖的在图里拆成两轮"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "search 工具只有一个 q 参数，模型会出什么问题"},
+      {"id": "d2", "intent": "强制调用某个工具和让模型自己选，API 上怎么表达"},
+      {"id": "d3", "intent": "工具太多时怎么避免选错，动态裁剪还是分组"}
+    ],
+    "pitfalls": [
+      "工具描述写成内部函数名缩写",
+      "串行执行本可并行的两个只读查询"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-structured-output",
+    "name": "结构化输出",
+    "summary": "要进系统的结果用 schema/工具约束，不要靠「请只输出 JSON」的提示词。解析失败要重试或降级。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "评测、出题、抽槽位用 response_format、with_structured_output 或专门的提交工具，得到 Pydantic 对象"},
+      {"id": "p2", "text": "提示词约束不稳定，模型仍会夹杂解释文字；失败时校验错误应回喂模型再试一次，并设上限"},
+      {"id": "p3", "text": "对用户可见的自然语言和对机器的 JSON 分开：不要把两者挤在同一次生成里再正则硬抠"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "评估节点必须吐 covered/missing，你怎么保证是合法 JSON"},
+      {"id": "d2", "intent": "结构化失败三次后你返回什么"},
+      {"id": "d3", "intent": "工具调用和 JSON mode 你怎么选"}
+    ],
+    "pitfalls": [
+      "用 split('{') 从散文里抠 JSON",
+      "评估失败就当作模型说不会"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-agentic-rag",
+    "name": "Agentic RAG",
+    "summary": "检索变成可多次调用的工具：模型自己决定查不查、改不改写查询、要不要再查。比固定 retrieve-then-answer 更灵活也更贵。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent", "rag"],
+    "key_points": [
+      {"id": "p1", "text": "经典 RAG 每问检索一次；Agentic RAG 把 retriever 当工具，模型可改写 query、换库、看结果不够再搜"},
+      {"id": "p2", "text": "要限制检索次数和空结果处理，否则会在知识库里空转；引用必须能回溯到 chunk"},
+      {"id": "p3", "text": "简单事实问答用固定链路更稳；跨多文档对比、需要澄清的问题才值得 Agent 检索"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "用户问对比两份制度，固定 Top-K 为什么不够"},
+      {"id": "d2", "intent": "检索工具返回空列表，下一跳你让模型干什么"},
+      {"id": "d3", "intent": "Agentic RAG 的成本和延迟怎么封顶"}
+    ],
+    "pitfalls": [
+      "每句闲聊都让 Agent 检索一遍",
+      "多次检索的片段全部原样塞进窗口"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-cost-latency",
+    "name": "成本与延迟",
+    "summary": "延迟来自模型、工具 I/O 和串行步骤；成本来自 token 和轮次。先测再砍，不要一上来换更大模型。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "P95 拆开看：首 token、工具耗时、图步数。能并行的检索/工具不要串行；能规则决定的边不要调模型"},
+      {"id": "p2", "text": "控成本：小模型做路由和抽取、大模型做难推理；缓存相同检索和相同分类；压缩工具结果"},
+      {"id": "p3", "text": "给每轮任务设 token/步数预算，超了就收束返回；观测上按 route、模型、工具维度拆费用"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "一次 Agent 跑了 40 秒，你怎么判断是模型慢还是工具慢"},
+      {"id": "d2", "intent": "token 一夜涨三倍，trace 显示上百步，你先砍什么"},
+      {"id": "d3", "intent": "哪些步骤可以换 8B 级小模型"}
+    ],
+    "pitfalls": [
+      "不看 trace 就把模型升级一档",
+      "为省钱关掉所有重试，错误直接抛给用户"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-guardrail",
+    "name": "护栏与策略节点",
+    "summary": "输入过滤、工具白名单、输出审核应做成图上的确定性节点，而不是只写在系统提示里。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "进入模型前做注入检测和 PII 脱敏；出模型后做敏感信息和拒答策略，失败走固定回复而不是再赌一次生成"},
+      {"id": "p2", "text": "工具层硬拦截：不在白名单、超出金额、目标环境不对，节点直接拒绝，不把决定交给模型"},
+      {"id": "p3", "text": "护栏节点要可测、可审计；提示词只能当辅助，被注入后不可信"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "画一张带输入护栏、工具、输出审核的图"},
+      {"id": "d2", "intent": "护栏误杀正常请求，你怎么放行又留痕"},
+      {"id": "d3", "intent": "输出审核也是 LLM，怎么避免它被同样的注入说服"}
+    ],
+    "pitfalls": [
+      "只在 Prompt 里写不得输出手机号",
+      "护栏模型与主模型共用同一段不可信上下文"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-store-vs-checkpoint",
+    "name": "短期 Checkpoint 与长期 Store",
+    "summary": "Checkpointer 记住这一 thread 的图状态；长期记忆用跨 thread 的 Store/业务库，按命名空间隔离用户。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "短期：当前 thread 的 messages 和中间字段，会话结束或过期即回收"},
+      {"id": "p2", "text": "长期：用户偏好、任务摘要写入 Store 或自己的表，新 thread 按 user_id 召回，不要把 thread_id 当用户 id"},
+      {"id": "p3", "text": "命名空间必须带租户/用户，否则会把 A 的订单问候给 B；写入要筛选，不是整段聊天 Embedding"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "客服突然念出别人的订单，checkpoint 和 store 哪一层漏了"},
+      {"id": "d2", "intent": "同一用户两个会话，长期记忆怎么共享、短期怎么隔离"},
+      {"id": "d3", "intent": "Checkpoint 表膨胀，你怎么保留策略"}
+    ],
+    "pitfalls": [
+      "用同一个 thread_id 服务所有用户",
+      "把 Checkpointer 当用户档案库"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-error-retry",
+    "name": "图内错误与重试",
+    "summary": "超时限流用节点 RetryPolicy；业务失败写进 State 再路由；工具错误回成 ToolMessage。interrupt 不能包在裸 except 里。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "瞬时错误（429、超时）给节点加退避重试；业务找不到记录则写 error 字段，走补救或升级节点"},
+      {"id": "p2", "text": "工具失败不要让图画崩，把错误文本作为 ToolMessage，并限制同类失败次数"},
+      {"id": "p3", "text": "崩溃靠 Checkpointer 从上一 super-step 恢复；并行 super-step 里成功节点的 pending writes 不应被失败节点抹掉"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "模型 429 和「订单不存在」分别走哪条错误路径"},
+      {"id": "d2", "intent": "为什么不能 catch 所有 Exception 再吞掉"},
+      {"id": "d3", "intent": "并行三个检查有一个超时，整单怎么处理"}
+    ],
+    "pitfalls": [
+      "节点里无限重试把配额打光",
+      "工具一抛错整个用户请求 500"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-time-travel",
+    "name": "Time travel",
+    "summary": "有 Checkpoint 就能取出历史快照，从某一步 replay 或 fork 改 State 再跑，用来调试而不是给用户随便回溯改账。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "get_state_history 列出每步快照；指定 checkpoint_id 可以从那一步重放"},
+      {"id": "p2", "text": "update_state 打补丁后 fork，原历史保留，适合验证「若当时换了提示会怎样」"},
+      {"id": "p3", "text": "重放会再次执行副作用，生产调试要用幂等或只读环境；不要让客服在生产 thread 上随便 time travel"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "第 6 步选错工具，怎么从第 5 步验证修复"},
+      {"id": "d2", "intent": "fork 和直接改当前 thread 有什么差别"},
+      {"id": "d3", "intent": "Replay 时外部 API 已经变了，结果还能当回归吗"}
+    ],
+    "pitfalls": [
+      "在生产 thread 上 replay 导致重复下单",
+      "没有 Checkpoint 却谈 time travel"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-langgraph-cycles",
+    "name": "图上的环与刹车",
+    "summary": "LangGraph 允许环，这是 Agent 循环的来源；必须用步数、重复检测或条件边接到 END，不能只靠模型自觉。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "条件边指回自己或指回 agent 节点就形成环；这是特性，也是无限循环的来源"},
+      {"id": "p2", "text": "recursion_limit / 最大 super-step、连续相同 tool_calls、业务字段 attempts>=N 都应能走到 END"},
+      {"id": "p3", "text": "碰限后把已有中间结果整理返回，比抛一个图递归错误给用户更好"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "agent↔tools 环在什么情况下算正常，什么时候算打转"},
+      {"id": "d2", "intent": "recursion_limit 触发后你怎么对用户解释"},
+      {"id": "d3", "intent": "规则刹车和 Prompt 里写「完成就停止」谁更可靠"}
+    ],
+    "pitfalls": [
+      "以为图是 DAG 就不能有环",
+      "只设了模型侧的 max_tokens，没设图的步数上限"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-hitl",
+    "name": "Human-in-the-loop 产品设计",
+    "summary": "高风险、低置信、超阈值才打断人；审批要有 SLA、审计和超时策略，不能每一步都弹窗。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "打断点选在不可逆写操作之前，或模型自报不确定、护栏命中时；只读查询不要等人"},
+      {"id": "p2", "text": "payload 要让人 10 秒内能判：做什么、关键字段、风险。恢复后走原图，不要让人从零重填"},
+      {"id": "p3", "text": "定义超时：过期自动拒绝、升级或按低风险默认值；所有决策留审计。暂停中的图发版要考虑兼容"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "银行退款 Agent，哪些单自动过、哪些必须人批"},
+      {"id": "d2", "intent": "审批队列里压了几百单还要发版，会断什么"},
+      {"id": "d3", "intent": "人一直不点，业务怎么办"}
+    ],
+    "pitfalls": [
+      "每个工具调用都弹确认，用户关掉 Agent",
+      "审批通过却没有记录是谁在什么时刻批的"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "agent-model-router",
+    "name": "模型路由与降级",
+    "summary": "按任务难度和模态选模型；主模型超时走备份。路由本身也要便宜、可观测。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "ai"],
+    "skill_tags": ["agent"],
+    "key_points": [
+      {"id": "p1", "text": "分类、抽取、改写查询用小模型；规划、含糊需求和长推理用大模型；看图/PDF 走多模态"},
+      {"id": "p2", "text": "网关负责超时、重试、备用供应商；业务节点拿到的是统一接口，不在每个节点里写死模型名更好切"},
+      {"id": "p3", "text": "降级要降能力也要降预期：备用模型不会用工具就改为直接回答并告知；把模型名和降级次数打进 trace"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "主模型挂了，面试评估节点怎么降级才不胡打分"},
+      {"id": "d2", "intent": "路由规则用关键词还是再用一个分类模型"},
+      {"id": "d3", "intent": "如何避免备用链路把错误答案静默当成成功"}
+    ],
+    "pitfalls": [
+      "所有节点绑定同一个最贵模型",
+      "降级后仍假装工具已经执行成功"
+    ],
+    "status": "published"
   }
 ]

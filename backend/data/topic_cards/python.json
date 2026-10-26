@@ -389,5 +389,1201 @@
       "max_workers 开和机器核数无关的超大值，把 FD 和内存打满"
     ],
     "status": "published"
+  },
+  {
+    "key": "python-gil",
+    "name": "GIL 全局解释器锁",
+    "summary": "CPython 同一时刻只让一个线程跑字节码，用来保护引用计数；IO 等待会释放，CPU 密集吃不满多核。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "GIL 是 CPython 解释器级的一把锁，同一进程里同时只能有一个线程执行 Python 字节码，保护引用计数和内部对象"},
+      {"id": "p2", "text": "线程在 IO 等待、部分 C 扩展（NumPy、hashlib 大输入）时会释放 GIL，所以 IO 密集多线程仍然有吞吐"},
+      {"id": "p3", "text": "CPU 密集要吃多核：用 multiprocessing、把热点交给会释放 GIL 的 C/Rust 扩展，或 Python 3.13+ 的免 GIL 构建（默认解释器仍带 GIL）"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "GIL 锁的是什么，为什么要有它"},
+      {"id": "d2", "intent": "IO 等待时 GIL 会不会放掉，多线程爬虫为什么还能加速"},
+      {"id": "d3", "intent": "CPU 密集任务你怎么真正用上多核"}
+    ],
+    "pitfalls": [
+      "说 Python 完全没有多线程，或以为所有实现都有 GIL",
+      "把免 GIL 构建当成已经是默认 CPython"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-gil-still-lock",
+    "name": "有 GIL 还要不要加锁",
+    "summary": "GIL 只保护解释器内部，不保护你的复合业务操作；共享可变对象仍要 Lock 或队列。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "GIL 保证单条字节码期间解释器状态一致，但 list.append 以外的「读-改-写」在字节码之间仍可被切换打断"},
+      {"id": "p2", "text": "dict/list 的单个操作在 CPython 里通常原子，但 check-then-act、计数 +1、先读后写必须自己加锁"},
+      {"id": "p3", "text": "优先用 queue.Queue、concurrent.futures 传结果，少共享可变状态；Thread 安全 ≠ 业务安全"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "两个线程同时对同一个 dict 做 check then insert，GIL 能不能替你保证正确"},
+      {"id": "d2", "intent": "什么操作可以认为是原子的，什么必须加 Lock"},
+      {"id": "d3", "intent": "你们共享状态是怎么同步的，有没有用过 Queue 代替锁"}
+    ],
+    "pitfalls": [
+      "以为有 GIL 就不用锁，计数器在多线程下丢更新",
+      "给整个请求处理加一把大锁，把并发又打回串行"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-mutable-immutable",
+    "name": "可变对象与不可变对象",
+    "summary": "list/dict/set 可原地改；int/str/tuple/frozenset 改了就是新对象。不可变不等于元素都不可变。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "不可变：int、float、str、bytes、tuple、frozenset，修改会得到新对象，id 会变；可变：list、dict、set、bytearray，原地改 id 不变"},
+      {"id": "p2", "text": "不可变对象当 dict key、在线程间共享更安全，因为没人能改你手里那份；可变对象共享就要同步"},
+      {"id": "p3", "text": "元组本身不可变，但里面的 list 仍能改；「不可变容器」只保证不能换槽位，不保证元素不可变"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "字符串是可变还是不可变，s += 'a' 之后 id 变不变"},
+      {"id": "d2", "intent": "为什么 list 不能当 dict 的 key，tuple 有时可以"},
+      {"id": "d3", "intent": "tuple 里塞了一个 list，还能不能当不可变来用"}
+    ],
+    "pitfalls": [
+      "认为 tuple 里的一切都改不了",
+      "用可变对象当缓存 key 或函数默认参数"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-mutable-default",
+    "name": "可变默认参数",
+    "summary": "默认参数在定义时求值一次并绑在函数对象上，用 list/dict 当默认值会跨调用共享。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "默认值在 def 执行时就算好，存在函数的 __defaults__ 里，不是每次调用新建"},
+      {"id": "p2", "text": "def f(a=[]): a.append(1) 多次调用会在同一份列表上累加，表现为「记忆」上次结果"},
+      {"id": "p3", "text": "正确写法是 def f(a=None): a = [] if a is None else a；Pydantic/dataclass 用 default_factory 也是同一道理"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "函数默认参数什么时候被求值"},
+      {"id": "d2", "intent": "def f(items=[]): 连续调两次，第二次为什么能看到第一次的元素"},
+      {"id": "d3", "intent": "你怎么改才能每次调用都是新列表"}
+    ],
+    "pitfalls": [
+      "用可变默认参数「顺便」当缓存，却说不清生命周期",
+      "用 if not a 判断空列表，把调用方传入的 [] 也覆盖掉"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-is-vs-eq",
+    "name": "is 与 ==",
+    "summary": "is 比身份（同一对象），== 比值（走 __eq__）；小整数和短字符串驻留会让 is 碰巧为真。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "is 比较 id，是不是同一个对象；== 调用 __eq__，内容是否相等。None、True、False 用 is 判断"},
+      {"id": "p2", "text": "CPython 把 -5～256 的整数和部分短字符串 intern，两个字面量 is 可能为 True，这是实现细节不能当逻辑"},
+      {"id": "p3", "text": "自定义类默认 == 和 is 一样；要按字段比相等就实现 __eq__，进 set/dict 还要配套 __hash__"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "判断变量是不是 None，用 is 还是 =="},
+      {"id": "d2", "intent": "a = 256; b = 256; a is b 为什么常常是 True，257 呢"},
+      {"id": "d3", "intent": "你们业务对象相等怎么定义，有没有只改 __eq__ 忘了 __hash__"}
+    ],
+    "pitfalls": [
+      "用 is 比较字符串或业务相等",
+      "依赖小整数池让 is 为真，换实现或大数就挂"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-list-tuple-dict-set",
+    "name": "list、tuple、dict 与 set",
+    "summary": "list 可变序列，tuple 不可变序列，dict 哈希映射，set 去重集合；按是否可变、是否有序、要不要 key 来选。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "list 是动态数组：下标 O(1)，末尾 append/pop O(1)，中间 insert/pop 要搬元素；tuple 不可变，可当 dict key，打包返回值"},
+      {"id": "p2", "text": "dict 是哈希表，平均查找 O(1)，key 必须可哈希；3.7+ 按插入顺序迭代。set 也是哈希，用来去重和成员判断"},
+      {"id": "p3", "text": "要保持顺序的去重用 dict.fromkeys；队列用 collections.deque，不要用 list.pop(0)"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "什么时候用 tuple 而不是 list"},
+      {"id": "d2", "intent": "dict 和 set 查找为什么快，key 有什么限制"},
+      {"id": "d3", "intent": "列表去重要保持原顺序，你怎么写"}
+    ],
+    "pitfalls": [
+      "用 list 当队列从头删，把复杂度打到 O(n)",
+      "认为 3.7 之前的 dict 也保证插入序，代码依赖顺序"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-dict-hash",
+    "name": "字典底层与可哈希 key",
+    "summary": "dict 用开放寻址哈希表；key 必须可哈希且不可变。冲突靠探测，删除留哑元，装载因子过高就扩容。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "key 先算 hash，再按掩码落到槽；冲突用开放寻址探测。平均查找 O(1)，最坏退化到 O(n)"},
+      {"id": "p2", "text": "能当 key 的必须实现 __hash__ 且不可变：str、int、frozenset、元素都可哈希的 tuple；list/dict/set 不行"},
+      {"id": "p3", "text": "删除不会立刻压缩，槽位放 dummy；装载因子超过阈值扩容重哈希。改正在做 key 的对象会让查找丢数据"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么 list 不能当 dict 的 key"},
+      {"id": "d2", "intent": "哈希冲突 CPython 怎么处理，和 Java HashMap 拉链差在哪"},
+      {"id": "d3", "intent": "自定义类当 key，只写 __eq__ 不写 __hash__ 会怎样"}
+    ],
+    "pitfalls": [
+      "可变对象当 key，改完之后 get 不到",
+      "认为 dict 删除会立即把表缩小"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-args-kwargs",
+    "name": "*args 与 **kwargs",
+    "summary": "*args 收多余位置参数成元组，**kwargs 收多余关键字成字典；解包时 * 拆序列、** 拆映射。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "定义时 *args 把多出来的位置参数收成 tuple，**kwargs 把多出来的关键字收成 dict，用来写包装器和转发"},
+      {"id": "p2", "text": "调用时 f(*lst) 把序列拆成位置参数，f(**d) 把字典拆成关键字；两者都能用，顺序是位置、关键字、再解包"},
+      {"id": "p3", "text": "仅关键字参数写在 *args 之后；仅位置参数用 / 。装饰器和超类方法转发时常用 def wrapper(*args, **kwargs)"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "函数签名里 *args 和 **kwargs 分别接到什么类型"},
+      {"id": "d2", "intent": "调用时 * 和 ** 干什么，和定义时是不是一回事"},
+      {"id": "d3", "intent": "包装一层日志函数，怎样把原参数原样转发出去"}
+    ],
+    "pitfalls": [
+      "把 *args 当成 list 去原地修改",
+      "kwargs 里的 key 和已有形参重名，调用直接 TypeError"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-pass-by-object",
+    "name": "传参是对象引用",
+    "summary": "Python 传的是对象的引用副本，不是 C 那种值拷贝，也不是指针地址本身。可变对象原地改会影响调用方。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "实参把对象引用赋给形参，形参是新名字指向同一对象。对不可变对象「修改」其实是形参指向新对象，调用方看不到"},
+      {"id": "p2", "text": "对可变对象做 append、d[k]=v 这种原地操作，调用方能看到；形参 lst = [] 只是让局部名换指向，外面那份不动"},
+      {"id": "p3", "text": "不要说「值传递」或「引用传递」就停，要能讲清：传引用的副本，再分可变/不可变"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Python 是值传递还是引用传递，你怎么跟面试官讲"},
+      {"id": "d2", "intent": "函数里 lst.append(1) 和 lst = [1] 对调用方差在哪"},
+      {"id": "d3", "intent": "想让函数改外面的 int，为什么做不到，通常怎么返回"}
+    ],
+    "pitfalls": [
+      "直接套 C++ 的值传递/引用传递，讲不清对象模型",
+      "在函数里原地改传入的请求 body dict，副作用泄漏到调用方"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-context-manager",
+    "name": "上下文管理器与 with",
+    "summary": "with 在进入时调 __enter__、离开时调 __exit__，异常也会走清理；适合锁、连接、文件。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "with obj 会调 obj.__enter__ 得到 as 后面的值；离开 suite（含异常、return）调 __exit__(exc_type, exc, tb)"},
+      {"id": "p2", "text": "__exit__ 返回 True 会吞掉异常；通常返回 False 或 None，让异常继续抛。文件、锁、连接都该用 with，避免漏关"},
+      {"id": "p3", "text": "自己实现可用类写两个方法，或 @contextlib.contextmanager 把 yield 前当进入、yield 后当清理；异步有 async with"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "with 打开文件，中途抛异常文件关不关"},
+      {"id": "d2", "intent": "__exit__ 的三个参数是什么，返回 True 会怎样"},
+      {"id": "d3", "intent": "项目里除了文件，还对哪些资源用过 with"}
+    ],
+    "pitfalls": [
+      "自己 try/finally 关资源却漏了生成器提前 return 的路径",
+      "在 __exit__ 里一律 return True，把业务异常吞掉"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-classmethod-staticmethod",
+    "name": "classmethod、staticmethod 与 property",
+    "summary": "实例方法收 self，类方法收 cls，静态方法不收隐含参数；property 把方法伪装成属性。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "实例方法第一个参数是实例；@classmethod 第一个是类，常用来写备选构造（from_json）；@staticmethod 就是放在类命名空间里的普通函数"},
+      {"id": "p2", "text": "@property 把无参方法变成属性访问，可配 setter 做校验；底层是描述符，属性写在类上才生效"},
+      {"id": "p3", "text": "需要类信息（改类变量、构造子类）用 classmethod；和类状态无关的工具函数用 staticmethod，很多时候模块级函数更清楚"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "from_dict 这种构造你会写成类方法还是静态方法"},
+      {"id": "d2", "intent": "property 和普通方法在调用上差在哪"},
+      {"id": "d3", "intent": "静态方法放在类里和放在模块里，你怎么选"}
+    ],
+    "pitfalls": [
+      "把 classmethod 当成 Java static，忽略它收到的是 cls",
+      "在实例上动态绑 property，描述符协议不生效"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-comprehension",
+    "name": "推导式与生成器表达式",
+    "summary": "列表推导一次建完整个列表；生成器表达式惰性产出。过滤和映射优先用推导，而不是 map/filter 套 lambda。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "[x for x in xs if cond] 立刻得到 list；{k: v for ...} 是字典推导，{x for ...} 是集合推导"},
+      {"id": "p2", "text": "(x for x in xs) 是生成器表达式，不占整份内存，只能迭代一次，适合大文件和流水线"},
+      {"id": "p3", "text": "推导有自己的作用域，循环变量不会漏到外面（Py3）；嵌套太深就改回 for，可读性优先"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "列表推导和生成器表达式差在哪，什么时候必须用后者"},
+      {"id": "d2", "intent": "sum(x*x for x in xs) 这里的括号能省吗"},
+      {"id": "d3", "intent": "双重 for 的推导式你怎么读执行顺序"}
+    ],
+    "pitfalls": [
+      "用列表推导处理上百万行，先把内存打满",
+      "在推导里写副作用（发请求、改全局），顺序和次数难测"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-str-bytes",
+    "name": "str 与 bytes",
+    "summary": "str 是 Unicode 文本，bytes 是原始字节；进出网络和文件要显式 encode/decode，并写明编码。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "Py3 里 str 是文本，bytes/bytearray 是字节。文本和字节不能隐式拼接，必须 encode/decode"},
+      {"id": "p2", "text": "encode 指定编码（默认 UTF-8）把 str 变成 bytes；decode 反过来。错误策略有 strict/replace/ignore"},
+      {"id": "p3", "text": "打开文件要写 mode 和 encoding；二进制用 'rb'。HTTP、Redis、socket 边界上分清你手里是 str 还是 bytes"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么 'a' + b'a' 会 TypeError"},
+      {"id": "d2", "intent": "网络上收到的数据你默认当什么，怎么解成字符串"},
+      {"id": "d3", "intent": "遇到乱码你怎么查是编码声明错了还是截断了"}
+    ],
+    "pitfalls": [
+      "依赖系统默认编码读写文件，换机器就乱码",
+      "对已经是 str 的 JSON 再 decode"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-exception",
+    "name": "异常处理",
+    "summary": "try/except/else/finally 顺序固定；except 从窄到宽，清理放 finally，异常链用 raise from。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "try 成功才走 else；无论成功失败都走 finally。return 在 finally 里会覆盖 try 里的返回值，不要这么写"},
+      {"id": "p2", "text": "先捕获具体异常再 Exception；裸 except: 会连 SystemExit/KeyboardInterrupt 一起吃掉。多个类型写成 except (A, B)"},
+      {"id": "p3", "text": "包装异常用 raise NewError() from e，保留 __cause__；日志里打 traceback，API 层再转成业务错误码"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "else 和 finally 谁在什么时候执行"},
+      {"id": "d2", "intent": "为什么不写 except Exception 甚至 except:"},
+      {"id": "d3", "intent": "下层抛了数据库异常，你们怎么包装再抛给接口"}
+    ],
+    "pitfalls": [
+      "except: 把键盘中断也吞了",
+      "在 finally 里 return，把真正的异常悄悄丢掉"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-type-hints",
+    "name": "类型注解",
+    "summary": "注解默认不在运行时强制检查，给阅读器和类型检查器看；FastAPI/Pydantic 会在运行时读注解做校验。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "def f(x: int) -> str 在解释器里不会因为传入 str 就报错；要静态检查用 mypy/pyright，要运行时校验用 Pydantic"},
+      {"id": "p2", "text": "常用 Optional[T]/T | None、list[T]、dict[K, V]、Protocol 描述鸭子类型、TypedDict 描述 JSON 形状"},
+      {"id": "p3", "text": "typing.overload 只给检查器用；from __future__ import annotations 让注解延迟求值，避免循环导入"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "类型注解会不会影响运行，传错类型会怎样"},
+      {"id": "d2", "intent": "FastAPI 为什么能靠注解做参数校验"},
+      {"id": "d3", "intent": "你们项目里类型检查是 CI 强制，还是只当文档"}
+    ],
+    "pitfalls": [
+      "以为写了注解 Python 就会像 Java 一样拒掉错误类型",
+      "把 typing.overload 当成运行时分发"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-slots",
+    "name": "__slots__",
+    "summary": "用固定槽位代替实例 __dict__，省内存、限制属性名；继承和动态属性要额外处理。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "__slots__ = ('x', 'y') 后实例没有 __dict__，属性存在固定偏移，海量小对象能明显省内存"},
+      {"id": "p2", "text": "未声明的属性赋值会 AttributeError，能挡住拼写错误；需要动态属性就把 '__dict__' 写进 slots"},
+      {"id": "p3", "text": "多继承时父类都定义 slots 要小心布局；dataclass(slots=True) 可以生成。弱引用要显式加 __weakref__"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "__slots__ 主要解决什么，代价是什么"},
+      {"id": "d2", "intent": "子类没声明 slots，实例还有没有 __dict__"},
+      {"id": "d3", "intent": "什么规模的对象你会考虑上 slots"}
+    ],
+    "pitfalls": [
+      "给 ORM 模型乱加 slots，动态字段和迁移挂掉",
+      "以为 slots 能加快方法调用，其实主要收益是内存"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-asyncio",
+    "name": "asyncio 事件循环",
+    "summary": "单线程用事件循环在 await 处切换协程；并发来自等待 IO，不是多核并行。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "async def 定义协程函数，调用它得到协程对象，要 await 或 create_task 才跑；事件循环在 await 时把控制权交给别的任务"},
+      {"id": "p2", "text": "适合成千上万的网络/数据库等待；切换是用户态、比线程轻。它不解除 GIL，CPU 密集仍然堵在这一条线程上"},
+      {"id": "p3", "text": "入口常用 asyncio.run；库里用 await。和线程混用时，阻塞调用丢到 to_thread / run_in_executor"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "协程和线程差在哪，切换发生在什么时候"},
+      {"id": "d2", "intent": "只写了 async def 却忘了 await，会发生什么"},
+      {"id": "d3", "intent": "asyncio 能不能让 CPU 计算变快"}
+    ],
+    "pitfalls": [
+      "把协程对象当结果用，忘记 await，只拿到 warning",
+      "认为 asyncio 比多线程更能打满 CPU"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-async-blocking",
+    "name": "协程里调用阻塞函数",
+    "summary": "事件循环只在 await 切换。time.sleep、同步 requests、同步 ORM 会冻住整个进程的所有请求。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "asyncio 单线程协作：没有 await 就没有切换。阻塞 2 秒等于所有其它协程停 2 秒"},
+      {"id": "p2", "text": "改用异步库（httpx.AsyncClient、asyncpg、aiosqlite）或 await asyncio.to_thread(func)；CPU 热点进进程池"},
+      {"id": "p3", "text": "开发可用 PYTHONASYNCIODEBUG=1 抓长时间回调；生产用超时、信号量和任务名，便于 py-spy / asyncio ps 排查"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "在 async 接口里调了 requests.get，线上会看到什么"},
+      {"id": "d2", "intent": "必须用同步 SDK 时你怎么不堵事件循环"},
+      {"id": "d3", "intent": "怎么发现是哪一段把 loop 卡住了"}
+    ],
+    "pitfalls": [
+      "全项目写成 async def，里面却全是同步 IO",
+      "捕获 CancelledError 不往外抛，把超时和取消弄失效"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-asyncio-gather",
+    "name": "gather 与 TaskGroup",
+    "summary": "gather 并发等待一组协程；TaskGroup 提供结构化并发，一个失败会取消其余并汇总异常。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "asyncio.gather(*aws) 并发跑多个 awaitable，按传入顺序返回结果；return_exceptions=True 时异常当结果返回"},
+      {"id": "p2", "text": "默认一个失败，gather 把异常抛给等待方，其余任务不会自动取消，可能成为泄漏的后台任务"},
+      {"id": "p3", "text": "3.11 的 TaskGroup：一个任务失败会取消同组其它任务，错误打成 ExceptionGroup，用 except* 处理"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "用 gather 同时打三个下游，其中一个 500，另外两个还在跑吗"},
+      {"id": "d2", "intent": "TaskGroup 比 gather 好在哪"},
+      {"id": "d3", "intent": "你们扇出调用超时和部分失败怎么收口"}
+    ],
+    "pitfalls": [
+      "gather 失败后不管剩下的任务，连接和超时在后台继续烧",
+      "create_task 之后既不 await 也不保存引用，任务被 GC 掉"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-concurrency-choice",
+    "name": "线程、进程与协程怎么选",
+    "summary": "先看瓶颈：IO 少用线程，IO 海量用 asyncio，CPU 密集用进程或免 GIL 构建；线上服务常常三者混用。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "阻塞 SDK、连接数几十的 IO：ThreadPoolExecutor。成千上万等待、能用异步库：asyncio，少线程切换"},
+      {"id": "p2", "text": "图像、加密、纯 Python 计算：multiprocessing / ProcessPoolExecutor，每进程独立 GIL；或把热点下放到 C 扩展"},
+      {"id": "p3", "text": "典型后端：ASGI 异步网关 + to_thread 包一个同步 SDK + Celery/队列消化重活。先说瓶颈再说工具"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "聚合 20 个 HTTP 接口，线程池和 asyncio 你怎么选"},
+      {"id": "d2", "intent": "Pandas 算一张大表，为什么不该开一堆线程"},
+      {"id": "d3", "intent": "你们线上是哪种组合，有没有在 async 里塞过阻塞调用"}
+    ],
+    "pitfalls": [
+      "没分清瓶颈就上协程，同步库把 loop 堵死",
+      "CPU 任务用多进程却传巨大对象，序列化比计算还贵"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-multiprocessing",
+    "name": "多进程与启动方式",
+    "summary": "每进程独立解释器和 GIL，能吃多核；数据靠 Queue/Pipe/共享内存。Unix 默认启动方式从 fork 迁向 forkserver。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "Process/Pool/ProcessPoolExecutor 各带一份内存和 GIL，CPU 可并行；创建贵，要复用池，任务函数和参数必须能 pickle"},
+      {"id": "p2", "text": "IPC 用 Queue、Pipe、Manager；共享大数组用 shared_memory。不要靠「子进程能看到父进程后来改的全局变量」"},
+      {"id": "p3", "text": "启动方式：spawn（干净解释器，Windows/macOS 默认）、fork（继承内存，线程后 fork 不安全）、forkserver。3.14 起不少 Unix 默认改为 forkserver"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "进程间怎么把结果传回来"},
+      {"id": "d2", "intent": "fork 和 spawn 差在哪，为什么有的代码一进 3.14 就挂"},
+      {"id": "d3", "intent": "Web 进程里再起进程池要注意什么"}
+    ],
+    "pitfalls": [
+      "在已有多线程的服务里 fork，锁和连接处于不确定状态",
+      "Windows 上忘了 if __name__ == '__main__'，子进程再次 import 炸递归"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-wsgi-asgi",
+    "name": "WSGI 与 ASGI",
+    "summary": "WSGI 一次调用同步返回完整响应；ASGI 用 scope/receive/send，能挂 WebSocket、SSE 和并发等待。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python", "http"],
+    "key_points": [
+      {"id": "p1", "text": "WSGI 是同步网关：服务器调应用，应用返回 iterable 响应。Flask/传统 Django 走这条，Gunicorn/uWSGI 是常见服务器"},
+      {"id": "p2", "text": "ASGI 把连接抽象成 scope + receive + send，同一 worker 可 await IO、处理 WebSocket 和流式响应。Uvicorn/Hypercorn 是 ASGI 服务器"},
+      {"id": "p3", "text": "FastAPI/Starlette 只跑在 ASGI 上；Django 两者都支持。CPU 核数仍靠多 worker 进程，协议本身不解 GIL"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "WSGI 为什么不好做 WebSocket 和 SSE"},
+      {"id": "d2", "intent": "FastAPI 为什么必须用 Uvicorn 而不是纯 Gunicorn sync worker"},
+      {"id": "d3", "intent": "ASGI 应用还能不能被 WSGI 服务器带着跑"}
+    ],
+    "pitfalls": [
+      "把 ASGI 说成框架而不是协议",
+      "以为换成 Uvicorn 单进程就能吃满多核"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-fastapi-stack",
+    "name": "FastAPI 分层：Uvicorn、Starlette、Pydantic",
+    "summary": "Uvicorn 管连接，ASGI 定协议，Starlette 管 Web 机制，Pydantic 管数据契约，FastAPI 把类型、依赖和文档粘起来。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python", "http"],
+    "key_points": [
+      {"id": "p1", "text": "Uvicorn 监听 socket，按 ASGI 调 app(scope, receive, send)；FastAPI 自己不接端口"},
+      {"id": "p2", "text": "Starlette 提供路由、中间件、WebSocket、后台任务、把同步端点丢进线程池；FastAPI 建在它上面"},
+      {"id": "p3", "text": "Pydantic 做请求/响应校验、类型转换和 JSON Schema；FastAPI 读函数签名，生成 OpenAPI，并把 校验失败映射成 422"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "FastAPI、Starlette、Uvicorn、Pydantic 各自干什么"},
+      {"id": "d2", "intent": "为什么函数参数写个类型，框架就知道从 path 还是 body 取值"},
+      {"id": "d3", "intent": "校验失败用户看到的是什么状态码"}
+    ],
+    "pitfalls": [
+      "把 FastAPI 当成从零实现了 HTTP 服务器",
+      "把 Pydantic 模型只当文档，运行时不校验"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-fastapi-async-def",
+    "name": "FastAPI 的 def 与 async def",
+    "summary": "async def 只在内部全是 await 异步库时才写；同步阻塞代码用普通 def，框架会丢进线程池。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python", "http"],
+    "key_points": [
+      {"id": "p1", "text": "async def 跑在事件循环上，适合 await httpx/asyncpg；里面若调用 requests、time.sleep、同步 ORM，会冻住同 worker 的所有请求"},
+      {"id": "p2", "text": "普通 def 路径函数由 Starlette 放到线程池再 await，适合同步 SDK 和 Django ORM；不要为了「看起来异步」把阻塞代码塞进 async def"},
+      {"id": "p3", "text": "Depends 同样遵循这套规则。混用时注意线程池大小，避免同步依赖把池打满；CPU 重活仍应出进程或进任务队列"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "async def 一定比 def 快吗"},
+      {"id": "d2", "intent": "路径函数里调了同步 Redis 客户端，该写成哪种"},
+      {"id": "d3", "intent": "你们怎么避免有人在 async 接口里新加了一行阻塞调用"}
+    ],
+    "pitfalls": [
+      "全站 async def，依赖里却用同步 SQLAlchemy Session",
+      "为了快把 CPU 密集计算直接写在 async 路径里"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-fastapi-depends",
+    "name": "FastAPI Depends",
+    "summary": "Depends 按请求解析依赖图，可嵌套、可 yield 做收尾；测试用 dependency_overrides 替换，不必 mock 全局。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python", "http"],
+    "key_points": [
+      {"id": "p1", "text": "路径函数参数写 x: T = Depends(fn)，FastAPI 先调 fn（及其子依赖）再注入结果，同一请求内可缓存"},
+      {"id": "p2", "text": "依赖用 yield：yield 前拿资源（DB session），响应结束后执行 yield 后的关闭/回滚，类似上下文管理器"},
+      {"id": "p3", "text": "鉴权、分页、租户上下文都适合做成依赖。测试时 app.dependency_overrides[fn] = fake，不要到处 patch"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Depends 和 Spring 的 @Autowired 像在哪、不像在哪"},
+      {"id": "d2", "intent": "yield 型依赖的关闭代码什么时候跑，异常时会不会跑"},
+      {"id": "d3", "intent": "单测里你怎么换掉真正的数据库依赖"}
+    ],
+    "pitfalls": [
+      "在依赖里做重 IO 却忘了它每个请求都会跑",
+      "yield 后写业务逻辑，响应已经发出去了"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-pydantic",
+    "name": "Pydantic 数据校验",
+    "summary": "用模型声明字段和约束，运行时解析、转换、报错；v2 校验核是 pydantic-core，API 与 v1 不兼容。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "BaseModel 声明类型和 Field 约束，model_validate / 构造时做转换和校验，失败抛 ValidationError，FastAPI 映射为 422"},
+      {"id": "p2", "text": "出参 model_dump()（v1 的 .dict()）；ORM 对象用 model_validate(obj, from_attributes=True)（v1 的 orm_mode）"},
+      {"id": "p3", "text": "v2：@field_validator 替换 @validator，model_config = ConfigDict(...) 替换 class Config；升级要靠真实 payload 回归，不能只改名字"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Pydantic 在 FastAPI 请求链路里哪一步介入"},
+      {"id": "d2", "intent": "v1 升 v2 你改过哪些 API"},
+      {"id": "d3", "intent": "嵌套模型和可选字段校验失败，错误信息怎么返回给前端"}
+    ],
+    "pitfalls": [
+      "继续用 v1 的 .dict() / parse_obj 当项目已经是 v2",
+      "把不该暴露的内部字段放进响应模型"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-django-vs-fastapi",
+    "name": "Django、Flask 与 FastAPI",
+    "summary": "Django 全家桶适合有 Admin 的完整应用；Flask 微内核靠扩展；FastAPI 面向类型化异步 API 和 OpenAPI。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python", "http"],
+    "key_points": [
+      {"id": "p1", "text": "Django：ORM、Admin、鉴权、迁移开箱即用，同步为主，也支持 ASGI。适合后台管理和约定大于配置的业务系统"},
+      {"id": "p2", "text": "Flask：WSGI 微框架，请求上下文（g、current_app）靠上下文栈，生态靠扩展；小服务和逐步长出来的项目常见"},
+      {"id": "p3", "text": "FastAPI：ASGI、Pydantic、自动 OpenAPI，高吞吐 IO 和 LLM 流式接口更合适。没有内置 Admin/ORM，要自己拼 SQLAlchemy 等"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "从零做一个带后台的内部系统，你选哪个，为什么"},
+      {"id": "d2", "intent": "只对外提供 JSON API，三者怎么选"},
+      {"id": "d3", "intent": "Flask 的请求上下文是怎么传到视图里的"}
+    ],
+    "pitfalls": [
+      "用 FastAPI 重造一套 Admin 和用户权限，工期被框架选型吃掉",
+      "在 Django 同步视图里写长时间 await，却还用 WSGI worker"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-django-orm-n1",
+    "name": "Django ORM 与 N+1",
+    "summary": "QuerySet 惰性求值；外键循环访问会打出 N+1。select_related 做 JOIN，prefetch_related 额外查询再组装。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python", "http"],
+    "key_points": [
+      {"id": "p1", "text": "QuerySet 是惰性的：切片、迭代、list()、取值时才 SQL。filter 再 filter 只是拼查询，不是立刻打库"},
+      {"id": "p2", "text": "N+1：遍历订单再访问 order.customer 会每人一条。正向 FK/O2O 用 select_related（JOIN），反向和 M2M 用 prefetch_related"},
+      {"id": "p3", "text": "大结果集用 iterator() 避免把整表缓存在 QuerySet 上。排查靠 Debug Toolbar、assertNumQueries、日志。Django 6.1 的 fetch mode 能在读取时补齐对等对象"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么 for order in Order.objects.all(): print(order.customer) 会打爆数据库"},
+      {"id": "d2", "intent": "select_related 和 prefetch_related 分别用在什么关系上"},
+      {"id": "d3", "intent": "导出百万行订单，为什么还要用 iterator"}
+    ],
+    "pitfalls": [
+      "在模板里点关系属性，把 N+1 藏在视图之外",
+      "list(queryset) 后再切片，以为还是惰性"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-celery",
+    "name": "Celery 任务与幂等",
+    "summary": "Web 进程把任务丢进 Broker，Worker 消费；Worker 崩溃可能重投，任务必须按业务键做成幂等。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python", "mq"],
+    "key_points": [
+      {"id": "p1", "text": "调用方 delay/apply_async 把消息写入 Redis/RabbitMQ，Worker 取出执行，结果可进 Result Backend。Web 请求不要同步干重活"},
+      {"id": "p2", "text": "acks_late=True 时任务成功才确认，Worker 宕机会被再投递。默认 at-least-once，要用唯一键 upsert 或去重表保证只生效一次"},
+      {"id": "p3", "text": "任务参数传 id 而不是 ORM 对象，执行时再读库。重试要有上限和退避；定时用 beat。Django 6 的 Tasks API 仍需要外部 worker"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "从接口把发邮件丢进 Celery，消息走哪几步"},
+      {"id": "d2", "intent": "Worker 在执行到一半被杀，任务会怎样，你怎么保证不发两封"},
+      {"id": "d3", "intent": "为什么不要把整个 Model 实例当任务参数"}
+    ],
+    "pitfalls": [
+      "假定任务只跑一次，支付/扣库存被执行两遍",
+      "在任务里用请求线程的数据库连接或 Flask 上下文"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-gunicorn-uvicorn",
+    "name": "Gunicorn 与 Uvicorn 部署",
+    "summary": "生产用多进程 worker 吃多核；ASGI 用 Uvicorn worker，同步 WSGI 用 sync/gthread。worker 数要和数据库连接数一起算。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python", "http"],
+    "key_points": [
+      {"id": "p1", "text": "一个 Python 进程受 GIL 限制，生产靠多个 worker 进程。经验值 2×CPU+1，再按内存和 FD 下调"},
+      {"id": "p2", "text": "FastAPI：gunicorn -k uvicorn.workers.UvicornWorker 或前面再加反向代理；纯 uvicorn --workers 也可以。Flask/Django WSGI 用 sync 或 gthread"},
+      {"id": "p3", "text": "连接池大小 × worker 数 < 数据库 max_conn。优雅重启、超时、keep-alive 要配；不要在 debug/reload 模式对外服务"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么开发时 uvicorn 一个进程，生产要开多个 worker"},
+      {"id": "d2", "intent": "Gunicorn 跑 FastAPI 要换哪种 worker class"},
+      {"id": "d3", "intent": "worker 开多了数据库先报 too many connections，你怎么算"}
+    ],
+    "pitfalls": [
+      "ASGI 应用用 Gunicorn 默认 sync worker，协程跑不起来",
+      "每个 worker 再开一个很大的线程池和连接池，把下游打满"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-descriptor",
+    "name": "描述符协议",
+    "summary": "类属性上实现 __get__/__set__/__delete__ 就会接管访问；property、方法绑定、ORM 字段都是描述符。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "描述符必须作为类属性存在。obj.x 会走 x.__get__(obj, type)；赋值走 __set__。只实现 __get__ 是非数据描述符，实例 __dict__ 同名项优先；实现了 __set__/__delete__ 是数据描述符，优先于实例字典"},
+      {"id": "p2", "text": "函数是非数据描述符：通过实例取方法时 __get__ 绑出 bound method，这就是 self 哪来的。property、classmethod、staticmethod 都是描述符"},
+      {"id": "p3", "text": "Django/SQLAlchemy 的字段也是：类上 User.name 是表达式，实例上 user.name 才是值。N+1 往往从「第一次读关系描述符才发 SQL」开始"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "property 底层靠哪几个方法，为什么必须写在类上"},
+      {"id": "d2", "intent": "数据描述符和非数据描述符差在哪，和实例 __dict__ 谁赢"},
+      {"id": "d3", "intent": "ORM 里点一下外键为什么会触发查询"}
+    ],
+    "pitfalls": [
+      "把描述符实例绑在 self 上当实例属性，协议不生效",
+      "自己实现 __get__ 却忘了处理 obj is None（从类上访问）"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-metaclass",
+    "name": "元类与 __init_subclass__",
+    "summary": "类是 type 的实例；元类在 class 语句执行时介入。日常注册插件优先 __init_subclass__，改类创建过程才用元类。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "class A: 等价于 A = type('A', bases, namespace)。指定 metaclass=M 时由 M 来构造类对象，可在此时收集字段、改属性、注册表"},
+      {"id": "p2", "text": "__init_subclass__ 在子类创建后回调，够用插件注册、校验类属性；Django ModelBase、SQLAlchemy Declarative 才需要真正的元类去改类的构建方式"},
+      {"id": "p3", "text": "两个元类进同一继承树会冲突。能不用就不用；Enum、ABC、ORM 基类已经占用了元类名额"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "类是谁的实例，class 语句实际调用了什么"},
+      {"id": "d2", "intent": "自动把 Handler 子类登记到 registry，元类和 __init_subclass__ 你选哪个"},
+      {"id": "d3", "intent": "ORM 为什么必须用元类，普通注册为什么不必"}
+    ],
+    "pitfalls": [
+      "业务代码里上元类做校验，后面混 ABC/Enum 就冲突",
+      "把元类说成「实例的父类」"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-dataclass",
+    "name": "dataclass",
+    "summary": "@dataclass 按字段生成 __init__/__repr__/__eq__；可变默认值用 default_factory，不可变用 frozen，省内存用 slots。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "装饰器读注解字段，生成初始化、打印和按字段相等。order=True 还会生成比较；kw_only=True 强制关键字参数"},
+      {"id": "p2", "text": "list/dict 默认值必须 field(default_factory=list)，不能写 items=[]，否则所有实例共享一份，和函数默认参数是同一坑"},
+      {"id": "p3", "text": "frozen=True 生成 __hash__（字段都可哈希时），可进 set/dict；slots=True 去掉实例 __dict__。需要校验或转换时更常换成 Pydantic"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "dataclass 帮你生成了哪些方法，和手写类差在哪"},
+      {"id": "d2", "intent": "字段默认是空列表，为什么必须 default_factory"},
+      {"id": "d3", "intent": "frozen 和 Pydantic 模型你怎么选"}
+    ],
+    "pitfalls": [
+      "在 dataclass 里写可变默认值，实例之间串数据",
+      "frozen 之后还想原地改字段，只能用 replace 生成新对象"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-lru-cache",
+    "name": "lru_cache 与缓存泄漏",
+    "summary": "functools.lru_cache 按参数缓存返回值；用在方法上会把实例本身当成 key，可能把对象钉死在缓存里。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "@lru_cache(maxsize=128) 把可哈希实参映射到结果，命中不再执行函数。maxsize=None 是无界缓存，长期服务等于泄漏"},
+      {"id": "p2", "text": "装饰实例方法时 self 是第一个参数，缓存会持有实例引用，实例本该销毁却活着。应用 cache 模块级函数，或 cached_property"},
+      {"id": "p3", "text": "参数必须可哈希；list/dict 当参数会 TypeError。cache_clear / cache_info 用于测试和观测。请求级数据不要当全局缓存 key"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "lru_cache 适合缓存什么，不适合缓存什么"},
+      {"id": "d2", "intent": "写在实例方法上为什么会泄漏"},
+      {"id": "d3", "intent": "配置变更后旧结果还在，你怎么清"}
+    ],
+    "pitfalls": [
+      "无界 lru_cache 缓存带用户 id 的结果，内存只涨不跌",
+      "用可变对象当缓存参数"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-collections",
+    "name": "deque、defaultdict 与 Counter",
+    "summary": "deque 两端 O(1)，defaultdict 缺 key 自动工厂，Counter 数频次；比手写 list/dict 分支更不容易写错。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "deque 头尾 append/pop 都是 O(1)，适合队列、滑动窗口；list.pop(0) 是 O(n)。maxlen 可做成固定长度缓冲"},
+      {"id": "p2", "text": "defaultdict(list) 访问不存在的 key 会调用工厂放进去；分组、邻接表不用先判断 in。工厂只在缺失时调用一次"},
+      {"id": "p3", "text": "Counter 是 dict 子类，支持 most_common、加减。统计用它，不要自己 dict[k] = dict.get(k,0)+1 写漏"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "实现一个队列为什么不推荐 list.pop(0)"},
+      {"id": "d2", "intent": "按 key 把元素归到多个 list，defaultdict 怎么写"},
+      {"id": "d3", "intent": "Counter 和普通 dict 计数差在哪"}
+    ],
+    "pitfalls": [
+      "defaultdict 的工厂误用成 defaultdict([]) 而不是 list",
+      "把 deque 当随机下标数组频繁用 d[i]，失去两端优势"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-import",
+    "name": "导入机制与循环导入",
+    "summary": "import 经 finder/loader 执行模块并写入 sys.modules；循环导入时半成品模块会被再次取到，属性可能还不存在。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "import foo 先查 sys.modules，没有再沿 sys.meta_path 找 loader，执行模块顶层代码后缓存。第二次 import 不会重新跑顶层"},
+      {"id": "p2", "text": "A 导入 B、B 再导入 A 时，A 已在 sys.modules 但是半成品，B 里 from a import x 可能 AttributeError。解法：延迟导入、拆公共模块、改为 import 模块再属性访问"},
+      {"id": "p3", "text": "__init__.py 让目录成为包（命名空间包可以没有）。from package import * 受 __all__ 控制。重载模块用 importlib.reload，生产里几乎不用"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "同一个模块被 import 两次，顶层代码跑几遍"},
+      {"id": "d2", "intent": "循环导入报错通常出现在哪一行，你怎么拆"},
+      {"id": "d3", "intent": "包的 __init__.py 里写了很多副作用，启动会怎样"}
+    ],
+    "pitfalls": [
+      "在模块顶层 import 重库或连数据库，import 即副作用",
+      "用 reload 修热更新，旧对象还握着旧类"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-new-vs-init",
+    "name": "__new__ 与 __init__",
+    "summary": "__new__ 真正创建实例，__init__ 只初始化；单例、不可变子类、返回其它类型都要动 __new__。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "构造是 type.__call__：先 cls.__new__(cls, ...) 得到对象，若返回的是 cls 的实例再调 __init__。__new__ 是静态的，第一个参数是类"},
+      {"id": "p2", "text": "int/str/tuple 子类化时值在 __new__ 里定，__init__ 改不了不可变内部。单例也是 __new__ 里返回已有实例，此时 __init__ 每次构造仍会跑，要自己挡"},
+      {"id": "p3", "text": "__new__ 可以返回别的类型，这时不会调本类 __init__。日常业务初始化放 __init__ 就够"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "对象是在哪一步被分配出来的"},
+      {"id": "d2", "intent": "用 __new__ 做单例，第二次 YourClass() 还会走 __init__ 吗"},
+      {"id": "d3", "intent": "继承 tuple 保存坐标，为什么不能只写 __init__"}
+    ],
+    "pitfalls": [
+      "只在 __init__ 里做单例判断，每次仍会 new 出新对象再扔掉",
+      "单例的 __init__ 反复把状态重置"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-abc-protocol",
+    "name": "ABC 与 Protocol",
+    "summary": "ABC 靠继承约束接口并可带默认实现；Protocol 是结构化子类型，不需要继承，类型检查器按形状匹配。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "ABC + @abstractmethod：子类没实现就不能实例化。适合框架基类要共享代码、强制实现钩子"},
+      {"id": "p2", "text": "typing.Protocol 描述「有这些方法就行」，第三方类和测试替身不必 import 你的基类。默认只在类型检查时生效，@runtime_checkable 才能 isinstance"},
+      {"id": "p3", "text": "后端依赖注入更常用 Protocol：PaymentGateway.charge 的形参写成协议，生产实现和 fake 都能过检查。Java 接口更接近 ABC，Go 的隐式接口更接近 Protocol"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Python 没有 interface 关键字，你怎么定义接口"},
+      {"id": "d2", "intent": "什么时候必须 ABC，什么时候 Protocol 更合适"},
+      {"id": "d3", "intent": "没加 runtime_checkable，运行时 isinstance 一个 Protocol 会怎样"}
+    ],
+    "pitfalls": [
+      "把 Protocol 当运行时接口，线上 isinstance 失败才发现",
+      "为了用 ABC 强迫第三方 SDK 继承你的基类"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-list-impl",
+    "name": "list 底层与复杂度",
+    "summary": "list 是动态数组不是链表；末尾增删 O(1) 均摊，中间插入和 pop(0) 要搬元素。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "CPython 的 list 是指针数组，按下标 O(1)。容量不够就整体扩容（总体仍均摊 O(1) append）"},
+      {"id": "p2", "text": "insert(i, x) / pop(0) 是 O(n)；删中间同样要搬。队列用 deque，头尾都勤用时不要用 list"},
+      {"id": "p3", "text": "遍历时删元素会跳过或 RuntimeError（改正在迭代的大小）。应迭代副本、建新列表，或倒序删"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "list 是链表还是数组，append 和 insert(0) 复杂度"},
+      {"id": "d2", "intent": "for x in lst: lst.remove(x) 会出什么问题"},
+      {"id": "d3", "intent": "需要频繁从头取元素，你换成什么"}
+    ],
+    "pitfalls": [
+      "把 list 当 Java LinkedList 用",
+      "在正序 for 里 remove， silently 漏元素"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-decorator-stack",
+    "name": "多层装饰器顺序",
+    "summary": "@a @b 等价于 f = a(b(f))：定义时从下往上包，调用时从上往下进、从内往外出。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "语法糖从下往上应用：先 b(f) 再 a(...)，所以最靠近 def 的装饰器最先包到原函数上"},
+      {"id": "p2", "text": "调用时先进入最外层 a 的 wrapper，再进 b，再到原函数；返回相反。日志+计时+鉴权叠在一起时，鉴权通常放最外层"},
+      {"id": "p3", "text": "带参装饰器是三层：@retry(3) 先执行 retry(3) 得到真正装饰器。每层都 wraps，否则 __name__ 只剩最外层 wrapper"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "@a @b def f 展开成哪一次赋值"},
+      {"id": "d2", "intent": "调用时哪个 wrapper 先执行"},
+      {"id": "d3", "intent": "鉴权装饰器和缓存装饰器你怎么叠，为什么"}
+    ],
+    "pitfalls": [
+      "把「从上往下写」和「从下往上包」说反",
+      "带参装饰器少一层，运行时把函数对象当配置参数"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-yield-from",
+    "name": "yield from 与生成器通信",
+    "summary": "yield from 把子生成器的产出委托出去；send/throw 让生成器在暂停处接收值和异常，是协程的前身。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "yield from sub 等价于把 sub 里每个 yield 值再产出，并拿到 sub 的 return 值。嵌套生成器不必手写 for v in sub: yield v"},
+      {"id": "p2", "text": "gen.send(x) 让当前 yield 表达式的值为 x 并从暂停处继续；第一次必须 send(None) 或 next 预启动"},
+      {"id": "p3", "text": "现代代码用 async/await 做协程，很少手写 send。理解它有助于看懂 asyncio 为什么在 await 处切换"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "yield from 比 for yield 多做了什么"},
+      {"id": "d2", "intent": "send 送进去的值出现在生成器的哪里"},
+      {"id": "d3", "intent": "现在还会在业务里用生成器协程吗，和 asyncio 什么关系"}
+    ],
+    "pitfalls": [
+      "对刚创建的生成器直接 send 非 None，抛 TypeError",
+      "在生成器里 return 大列表，抵消惰性"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-truthy",
+    "name": "真值测试与 None",
+    "summary": "0、空容器、None、False 都是假；要区分「没传」和「传了空/零」必须用 is None，不要 if not x。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "bool 上下文走 __bool__ 或 __len__。假值：None、False、0、0.0、''、[]、{}、set()。自定义类默认真，除非实现了上述方法"},
+      {"id": "p2", "text": "bool 是 int 的子类，True == 1。dict/set 里 True 和 1 可能撞成同一个键，业务状态不要混用"},
+      {"id": "p3", "text": "可选参数用 None 哨兵：if x is None。if not items 会把合法的空列表和 0 一起当成缺省"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "哪些值在 if 里是假"},
+      {"id": "d2", "intent": "接口字段允许传 0，后端 if not amount 会怎样"},
+      {"id": "d3", "intent": "True 能不能当 dict 的 key 和 1 共存"}
+    ],
+    "pitfalls": [
+      "用 if not user_id 判断未登录，user_id=0 的测试账号进不去",
+      "把空列表和 None 当成同一种「没有数据」返回给前端"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-memory-leak",
+    "name": "Python 内存泄漏排查",
+    "summary": "循环引用、无界缓存、闭包/回调、未关闭的生成器和全局 registry 会让长期进程只涨不跌；先分清泄漏和碎片。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "直线上涨才是泄漏；平台期更常见是分配器碎片或池。循环引用靠分代 GC，但 __del__ 参与的环、C 扩展 malloc、永不驱逐的 cache 回收不了"},
+      {"id": "p2", "text": "高发点：lru_cache 钉住实例、模块级 dict 按请求 key 只进不出、闭包/信号槽、traceback 挂着帧、ORM 把整表 identity map 留下、未耗尽的生成器"},
+      {"id": "p3", "text": "tracemalloc 对比两张快照看行号；objgraph 看谁引用谁；RSS 还要看 pymalloc 没还给 OS。治本是弱引用、TTL、按请求隔离，重启 worker 只是缓解"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Worker 跑一天内存翻倍，你先排除哪些不是泄漏"},
+      {"id": "d2", "intent": "有 GC 为什么还会漏，举一个你们见过的持有者"},
+      {"id": "d3", "intent": "tracemalloc 怎么用，和 py-spy 分工是什么"}
+    ],
+    "pitfalls": [
+      "把 RSS 不下降当成泄漏，其实是分配器持有 arena",
+      "只重启 Celery prefork 子进程当修复，根因还在全局缓存"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-weakref",
+    "name": "弱引用",
+    "summary": "weakref 引用对象但不增加引用计数，对象消失后变成 None；适合缓存和观察者，避免把被观察者钉住。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "WeakRef(obj) 不让 refcount+1；obj 没了之后 ref() 返回 None。WeakValueDictionary / WeakKeyDictionary / WeakSet 做「活着才在表里」的注册表"},
+      {"id": "p2", "text": "回调在对象回收时触发，可做清理。list/dict 等部分内置类型不能直接弱引用，要包一层用户类"},
+      {"id": "p3", "text": "和 lru_cache、父指子/子指父的树结构搭配：观察者不阻止销毁。有 __slots__ 的类要显式包含 __weakref__ 才能弱引用"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "弱引用和普通引用差在哪，什么时候该用"},
+      {"id": "d2", "intent": "做一个「当前还活着的连接」注册表，用什么结构"},
+      {"id": "d3", "intent": "slots 类弱引用失败是为什么"}
+    ],
+    "pitfalls": [
+      "以为弱引用能解决循环引用就不用 GC 了",
+      "在回调里再把对象救活，生命周期变得不可预测"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-contextvars",
+    "name": "contextvars 与 threading.local",
+    "summary": "threading.local 按线程隔离；contextvars 按上下文隔离，asyncio 每个 Task 一份副本，适合 request_id。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "threading.local() 的属性只在当前线程看得到，换线程就是另一份。线程池里任务结束不会自动清，可能串到下一个任务"},
+      {"id": "p2", "text": "contextvars.ContextVar 在 asyncio 里随 Task 拷贝上下文，await 之后仍是自己的值。Flask 新版的 request/g、日志的 trace_id 用它"},
+      {"id": "p3", "text": "set() 返回 Token，reset(token) 恢复。不要用全局变量在协程间传请求上下文，那会串单"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "在 asyncio 里用 threading.local 存 user_id 会怎样"},
+      {"id": "d2", "intent": "contextvars 和线程局部差在哪"},
+      {"id": "d3", "intent": "你们日志里的 request_id 是怎么传到深层函数的"}
+    ],
+    "pitfalls": [
+      "线程池复用线程，local 里上一个请求的用户还在",
+      "在线程里改 ContextVar 却指望事件循环那一侧看见"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-asyncio-timeout",
+    "name": "asyncio 超时与取消",
+    "summary": "asyncio.timeout 到期会取消任务；CancelledError 必须继续抛出，否则超时和 TaskGroup 全部失效。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "3.11+ 用 async with asyncio.timeout(s):，到期在当前 await 处注入 CancelledError，再转成 TimeoutError。finally 仍会跑"},
+      {"id": "p2", "text": "取消是协作的：只有 await 才会收到。屏蔽取消或 except Exception 把 CancelledError 吃掉，任务会变成僵尸，外层超时永不结束"},
+      {"id": "p3", "text": "wait_for 是旧 API。扇出时用 TaskGroup 或 gather 加统一超时；重试循环里一定要把 CancelledError 放行"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "给下游 HTTP 调用加 2 秒超时，取消发生在哪一步"},
+      {"id": "d2", "intent": "为什么不能 except Exception 把取消吞掉"},
+      {"id": "d3", "intent": "超时后连接和任务你怎么清"}
+    ],
+    "pitfalls": [
+      "宽泛捕获 Exception 导致取消失效",
+      "超时只包了创建 task，没包 await，任务在后台继续跑"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-sqlalchemy-session",
+    "name": "SQLAlchemy Session 与连接池",
+    "summary": "Engine/连接池是进程级资源，Session 不是线程安全的，按请求创建、用完关闭。池大小要乘 worker 数。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "Engine 管连接池，应用启动建一次、关闭 dispose。Session 跟踪对象和事务，跨请求共享会脏数据、事务互相踩"},
+      {"id": "p2", "text": "FastAPI 用 Depends yield 一个 Session/AsyncSession，结束关闭归还连接到池。同步 Session 不要放进 async def 里长时间阻塞"},
+      {"id": "p3", "text": "pool_size × worker < 数据库 max_conn；pool_pre_ping 防断连。commit/rollback 边界要明确，异常路径必须 rollback"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么不能把 Session 做成全局单例"},
+      {"id": "d2", "intent": "连接、会话、事务三者分别是什么"},
+      {"id": "d3", "intent": "4 个 worker 每个 pool_size=20，数据库侧会看到多少连接"}
+    ],
+    "pitfalls": [
+      "一个 Session 用完整场请求，连接被长调用占死",
+      "async 路由里用同步 create_engine，事件循环被 ORM 堵住"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-fastapi-lifespan",
+    "name": "FastAPI lifespan 与 app.state",
+    "summary": "lifespan 在 yield 前做启动、yield 后做关闭，用来建连接池和 HTTP 客户端；共享对象放 app.state，不要放模块全局。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python", "http"],
+    "key_points": [
+      {"id": "p1", "text": "@asynccontextmanager async def lifespan(app): 启动代码；yield；关闭代码。传给 FastAPI(lifespan=...)。旧的 on_event startup/shutdown 已不推荐"},
+      {"id": "p2", "text": "DB 引擎、Redis、httpx.AsyncClient 在启动时创建，放到 app.state，关闭时 aclose/dispose，避免每个请求 new 一个客户端"},
+      {"id": "p3", "text": "测试要让 lifespan 真的跑起来（TestClient 上下文或 ASGITransport），否则 state 是空的。多 worker 时每个进程各跑一遍 lifespan"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "连接池应该在请求里建还是在 lifespan 里建"},
+      {"id": "d2", "intent": "on_event 和 lifespan 你现在用哪个"},
+      {"id": "d3", "intent": "单测没进 lifespan，访问 app.state.db 会怎样"}
+    ],
+    "pitfalls": [
+      "模块 import 时就 create_engine，测试和多进程下重复建池",
+      "只写了启动忘了关闭，文件描述符和连接泄漏"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-flask-context",
+    "name": "Flask 请求上下文",
+    "summary": "request 和 g 看起来像全局变量，实际是上下文栈；离开请求或没推上下文就取值会报错。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python", "http"],
+    "key_points": [
+      {"id": "p1", "text": "Flask 用应用上下文和请求上下文两层栈。视图里的 request、session、g、current_app 是代理，指向栈顶那一份"},
+      {"id": "p2", "text": "测试客户端会自动推上下文；手动调视图或脚本里用 app.app_context()。新版本底层迁到 contextvars，线程和协程更安全"},
+      {"id": "p3", "text": "Celery 任务、后台线程默认没有请求上下文，不要在任务里用 request。需要的数据当参数传进去"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "request 既然像全局变量，为什么在线程里直接读会报错"},
+      {"id": "d2", "intent": "g 适合放什么，不适合放什么"},
+      {"id": "d3", "intent": "异步任务里怎么拿当前用户，还能用 request 吗"}
+    ],
+    "pitfalls": [
+      "在模块导入或 Blueprint 定义时访问 current_app.config",
+      "后台任务复用请求里的数据库连接和用户对象"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-pytest",
+    "name": "pytest fixture 与依赖覆盖",
+    "summary": "fixture 管准备和清理，parametrize 铺用例；FastAPI 测试用 dependency_overrides 换掉 DB，测完必须 clear。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "fixture 可以 yield：yield 前准备、后清理。scope 有 function/session。conftest.py 里的 fixture 自动对目录可见"},
+      {"id": "p2", "text": "@pytest.mark.parametrize 一组输入跑多遍。monkeypatch / mocker.patch 要补「被使用处的名字」，不是定义处"},
+      {"id": "p3", "text": "FastAPI：app.dependency_overrides[get_db] = fake；测完 clear。AsyncSession 要和外层事务/事件循环同寿命，function 级 engine 换 loop 会报错"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "fixture 的 yield 前后分别干什么"},
+      {"id": "d2", "intent": "patch 应该补导入它的模块还是定义它的模块"},
+      {"id": "d3", "intent": "怎么让接口测试不打真实数据库"}
+    ],
+    "pitfalls": [
+      "dependency_overrides 不清，用例顺序互相污染",
+      "每个测试新建 async engine，事件循环一换连接池失效"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-profiling",
+    "name": "Python 性能排查",
+    "summary": "先分清慢在 DB、下游还是 Python 本身；线上用 py-spy 采样，本地用 cProfile，异步卡住看任务栈。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python"],
+    "key_points": [
+      {"id": "p1", "text": "先看链路/APM：时间在 SQL、HTTP 还是解释器。大多数接口慢是 N+1 和下游，不是 Python 语法"},
+      {"id": "p2", "text": "py-spy 对运行中进程采样，不必重启；本地 cProfile/viztracer 看调用次数。循环里属性查找、纯 Python 热路径再考虑数据结构或扩展"},
+      {"id": "p3", "text": "加速手段：C 实现的标准库和 NumPy、异步 IO、多进程、Pydantic v2 这种 Rust 核。3.14 可用 asyncio ps 看卡住的 Task"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "线上某个接口 P99 变差，你第一步看什么"},
+      {"id": "d2", "intent": "py-spy 和 cProfile 各用在什么场合"},
+      {"id": "d3", "intent": "确认是纯 Python CPU 热之后，你有哪些加速选项"}
+    ],
+    "pitfalls": [
+      "没 profile 先上多进程或 Cython",
+      "把 GIL 当所有慢请求的原因，实际是同步打了十次数据库"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "python-django-tx",
+    "name": "Django 事务与行锁",
+    "summary": "F() 把计算下推到 SQL；select_for_update 在事务里锁行。更新计数不要先读到 Python 再写回。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "python"],
+    "skill_tags": ["python", "http"],
+    "key_points": [
+      {"id": "p1", "text": "transaction.atomic() 划事务。默认自动提交下，单条 ORM 写各成事务；要「扣库存+写订单」一起成功才包 atomic"},
+      {"id": "p2", "text": "Product.objects.filter(pk=id).update(stock=F('stock')-1) 一次 SQL 完成，避免丢失更新。需要读后判断再用 select_for_update，锁要短"},
+      {"id": "p3", "text": "atomic 里捕获异常还不 reraise，事务会处于 broken 状态再操作会 TransactionManagementError。视图层异常应让中间件回滚"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "两个请求同时库存 -1，只在 Python 里 obj.stock -= 1 会怎样"},
+      {"id": "d2", "intent": "F() 和 select_for_update 分别解决什么"},
+      {"id": "d3", "intent": "atomic 里你 catch 了异常还继续写库，Django 会怎样"}
+    ],
+    "pitfalls": [
+      "长事务里调 HTTP，把行锁挂到超时",
+      "在 atomic 里吞掉异常还当成功返回"
+    ],
+    "status": "published"
   }
 ]

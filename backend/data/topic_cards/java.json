@@ -90,5 +90,741 @@
       "以为设置了 maxPoolSize 就一定能扩容"
     ],
     "status": "published"
+  },
+  {
+    "key": "java-hashmap",
+    "name": "HashMap 结构与扩容",
+    "summary": "数组加链表或红黑树，容量 2 的幂，树化要同时看链表长度和数组容量。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java"],
+    "key_points": [
+      {"id": "p1", "text": "JDK8 是数组+链表/红黑树；hash 扰动后用 (n-1)&hash 定位，容量保持 2 的幂才能均匀且用位运算代替取模"},
+      {"id": "p2", "text": "链表长度超过 8 且数组容量至少 64 才树化，否则先扩容；树节点少于 6 再退回链表，避免来回转换"},
+      {"id": "p3", "text": "默认容量 16、负载因子 0.75，超过阈值扩成两倍；JDK8 尾插并把节点拆成高低位链表，不再像 JDK7 头插那样并发成环，但仍会丢数据"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么树化阈值是 8 而不是一有冲突就用红黑树"},
+      {"id": "d2", "intent": "容量为什么必须是 2 的幂"},
+      {"id": "d3", "intent": "JDK7 和 JDK8 扩容差在哪，8 还线程不安全吗"}
+    ],
+    "pitfalls": [
+      "说链表长度到 8 就一定变成红黑树，忘了容量要先到 64",
+      "把 HashMap 说成 JDK8 已经线程安全"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-arraylist-linkedlist",
+    "name": "ArrayList 与 LinkedList",
+    "summary": "随机访问用数组，头尾频繁进出才考虑链表；中间插入两边都是 O(n)。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java"],
+    "key_points": [
+      {"id": "p1", "text": "ArrayList 动态数组，按下标 get 是 O(1)；中间增删要搬后面的元素，扩容约 1.5 倍"},
+      {"id": "p2", "text": "LinkedList 双向链表，按下标仍是 O(n)；头尾增删 O(1)，也可当双端队列"},
+      {"id": "p3", "text": "两者都不是线程安全；业务里默认 ArrayList，只有明确头尾队列或栈才用 LinkedList"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "一万个元素时 get(9999)，ArrayList 和 LinkedList 差在哪"},
+      {"id": "d2", "intent": "往中间 insert，链表真的是 O(1) 吗"},
+      {"id": "d3", "intent": "ArrayList 扩容和 Vector 有什么不同"}
+    ],
+    "pitfalls": [
+      "背成 LinkedList 插入一定比 ArrayList 快",
+      "用 LinkedList 当随机访问列表"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-hashset",
+    "name": "HashSet 与去重",
+    "summary": "HashSet 底层就是 HashMap，用 key 去重；自定义对象必须同时重写 equals 和 hashCode。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java"],
+    "key_points": [
+      {"id": "p1", "text": "HashSet 内部是 HashMap，元素当 key、固定 PRESENT 当 value，去重规则与 Map 相同"},
+      {"id": "p2", "text": "LinkedHashSet 保留插入序，TreeSet 靠 Comparator/Comparable 排序，不看 hashCode"},
+      {"id": "p3", "text": "对象放进 Set 后不要改参与 equals/hashCode 的字段，否则再也找不到、也无法删"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "HashSet 怎么判断两个对象重复"},
+      {"id": "d2", "intent": "只要重写 equals 不重写 hashCode 会怎样"},
+      {"id": "d3", "intent": "要有序去重你选 LinkedHashSet 还是 TreeSet"}
+    ],
+    "pitfalls": [
+      "自定义实体只重写 equals",
+      "把可变对象放进 HashSet 后又改了 id"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-copyonwrite",
+    "name": "CopyOnWriteArrayList",
+    "summary": "写时复制整表，读无锁；适合读多写极少，不适合频繁 add。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "写操作加锁后复制整个数组再替换引用，读走 volatile 数组，无需加锁"},
+      {"id": "p2", "text": "迭代器看的是创建时的快照，弱一致，写对正在遍历的视图不可见"},
+      {"id": "p3", "text": "每次写都拷贝，内存和 CPU 贵；读多写少的监听器列表合适，当普通业务 List 会很慢"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "读多写少的配置列表，为什么不直接 Collections.synchronizedList"},
+      {"id": "d2", "intent": "遍历时另一个线程 add 了，当前迭代器看不看得到"},
+      {"id": "d3", "intent": "写很频繁还能不能用它"}
+    ],
+    "pitfalls": [
+      "把它当线程安全的 ArrayList 到处用",
+      "在写路径上频繁 add/remove 还指望高性能"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-linkedhashmap",
+    "name": "LinkedHashMap 与 LRU",
+    "summary": "在 HashMap 上串一条双向链表保序；accessOrder 可做简易 LRU。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java"],
+    "key_points": [
+      {"id": "p1", "text": "默认按插入序迭代；构造时 accessOrder=true 则按访问顺序，get/put 会把节点挪到链表尾"},
+      {"id": "p2", "text": "重写 removeEldestEntry 可在超出容量时删最老节点，用来做有界 LRU 缓存"},
+      {"id": "p3", "text": "本身不是线程安全；生产缓存更常见 Caffeine/Guava，它适合小容量、单线程或外部加锁"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "怎么用 LinkedHashMap 做 LRU"},
+      {"id": "d2", "intent": "accessOrder 为 true 时 get 会改变迭代顺序吗"},
+      {"id": "d3", "intent": "和 Redis LRU、Caffeine 你怎么选"}
+    ],
+    "pitfalls": [
+      "多线程共享一个 LinkedHashMap LRU 不加锁",
+      "以为 HashMap 迭代也是插入序"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-fail-fast",
+    "name": "fail-fast 与迭代器",
+    "summary": "集合被结构修改后，迭代器靠 modCount 快速失败；并发包是弱一致，不是快照。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java"],
+    "key_points": [
+      {"id": "p1", "text": "ArrayList/HashMap 的迭代器比较 expectedModCount 和 modCount，遍历中直接 add/remove 会 ConcurrentModificationException"},
+      {"id": "p2", "text": "单线程里要用迭代器自己的 remove，或 Iterator/ListIterator；for-each 里集合.remove 会踩坑"},
+      {"id": "p3", "text": "这不是线程安全机制，只是尽量发现并发修改；ConcurrentHashMap 遍历弱一致，不抛这个异常也不保证快照"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "for-each 里删 ArrayList 元素为什么炸"},
+      {"id": "d2", "intent": "单线程正确删法是什么"},
+      {"id": "d3", "intent": "ConcurrentHashMap 为什么常常不抛 CME"}
+    ],
+    "pitfalls": [
+      "把 fail-fast 当成并发安全",
+      "多线程共用 ArrayList 还靠 CME 当监控"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-equals-hashcode",
+    "name": "equals 与 hashCode",
+    "summary": "equals 相等则 hashCode 必须相等；当 Map/Set 的 key 时两套必须成对重写。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java"],
+    "key_points": [
+      {"id": "p1", "text": "== 比引用（基本类型比值）；Object.equals 默认也是 ==，String/包装类重写成比内容"},
+      {"id": "p2", "text": "equals 为 true 则 hashCode 必须相同，否则 HashMap 会把同一逻辑 key 放到不同桶"},
+      {"id": "p3", "text": "hashCode 相同只说明可能冲突，还要用 equals；两方法应基于同一组字段，放入集合后不要改"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "自定义 User 当 HashMap 的 key，只重写 equals 会怎样"},
+      {"id": "d2", "intent": "hashCode 相同 equals 不同是不是 bug"},
+      {"id": "d3", "intent": "Lombok @Data 生成的 equals 有什么坑"}
+    ],
+    "pitfalls": [
+      "只重写其中一个",
+      "把含可变集合字段的对象当 key"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-string",
+    "name": "String 不可变与常量池",
+    "summary": "内容不可变才能当 HashMap key 并做常量池共享；改字符串要换 Builder。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java"],
+    "key_points": [
+      {"id": "p1", "text": "String 类和内部数组都是 final，任何拼接都产生新对象，因此线程安全、hash 可缓存"},
+      {"id": "p2", "text": "字面量进常量池，new String 在堆上再创一份；intern 可把堆上的串放进或复用池"},
+      {"id": "p3", "text": "循环里用 + 拼接会制造大量临时对象，应改 StringBuilder；编译期常量拼接仍可能被优化掉"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "String 为什么设计成不可变"},
+      {"id": "d2", "intent": "\"ab\"==\"a\"+\"b\" 和 new String(\"ab\") 各是什么结果"},
+      {"id": "d3", "intent": "什么时候该 intern，什么时候不该"}
+    ],
+    "pitfalls": [
+      "循环里用 + 拼 SQL 或日志",
+      "用 == 比较用户输入的字符串"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-stringbuilder",
+    "name": "StringBuilder 与 StringBuffer",
+    "summary": "都可变；Builder 无锁更快，Buffer 方法带 synchronized。局部拼接用 Builder。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java"],
+    "key_points": [
+      {"id": "p1", "text": "两者都是可变字符序列，避免每次拼接新建 String"},
+      {"id": "p2", "text": "StringBuffer 方法加了 synchronized，多线程共享同一实例才需要；局部变量没人抢，用 StringBuilder"},
+      {"id": "p3", "text": "锁保护的是这一个 Buffer 对象，不是业务原子性；跨线程拼串更常见的是各自 Builder 再汇总"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "方法里拼日志用哪个，为什么"},
+      {"id": "d2", "intent": "StringBuffer 线程安全指的是哪一层"},
+      {"id": "d3", "intent": "Java 9+ 的字符串拼接还要不要手写 Builder"}
+    ],
+    "pitfalls": [
+      "所有拼接都用 StringBuffer 当更安全",
+      "多个线程往同一个 Builder 里 append"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-exception",
+    "name": "异常体系",
+    "summary": "Error 几乎不捕；受检异常要声明或捕获，RuntimeException 是非受检。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java"],
+    "key_points": [
+      {"id": "p1", "text": "Throwable 分 Error 和 Exception；Error 如 OOM、StackOverflow 一般不在业务里 catch"},
+      {"id": "p2", "text": "IOException 等受检异常必须声明或捕获；RuntimeException 和子类是非受检，编译器不强制"},
+      {"id": "p3", "text": "不要吞异常；包装时保留 cause；finally/try-with-resources 关资源，避免 catch Exception 后空着"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "受检和非受检你怎么选，接口要不要抛 IOException"},
+      {"id": "d2", "intent": "catch Exception 再 log 一下有什么问题"},
+      {"id": "d3", "intent": "try-with-resources 比 finally 关流好在哪"}
+    ],
+    "pitfalls": [
+      "catch Exception 后什么都不做",
+      "在业务代码里 catch Error 还继续跑"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-generics",
+    "name": "泛型与类型擦除",
+    "summary": "编译期检查、运行期擦成上界；不能用基本类型，PECS 决定 in/out。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java"],
+    "key_points": [
+      {"id": "p1", "text": "泛型只支持引用类型，List<int> 非法，要用 Integer；自动装箱会有额外对象和 NPE"},
+      {"id": "p2", "text": "运行期类型擦除，List<String> 和 List<Integer> 的原始类型都是 List，不能靠重载区分"},
+      {"id": "p3", "text": "Producer extends、Consumer super：要从集合取用 ? extends，往集合放用 ? super"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么不能 new T()，也不能 List<int>"},
+      {"id": "d2", "intent": "两个方法分别接 List<String> 和 List<Integer> 能重载吗"},
+      {"id": "d3", "intent": "Collections.copy 的签名为什么是一个 extends 一个 super"}
+    ],
+    "pitfalls": [
+      "以为运行期还能拿到 T 的 Class",
+      "用原始类型 List 丢掉泛型检查"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-dcl-singleton",
+    "name": "双重检查单例",
+    "summary": "DCL 必须把实例声明成 volatile，否则可能看到半初始化对象；枚举更省事。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "第一次检查避免每次加锁，进入 synchronized 后再检查一次，防止多个线程都 new"},
+      {"id": "p2", "text": "instance 必须 volatile：禁止 new 的指令重排，让别的线程看不见未跑完构造器的对象"},
+      {"id": "p3", "text": "饿汉、静态内部类、枚举都能安全发布；枚举还能防反射和反序列化再造一份"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "请口述双重检查的代码，volatile 放哪"},
+      {"id": "d2", "intent": "去掉 volatile 会出什么可见性问题"},
+      {"id": "d3", "intent": "为什么很多人说枚举单例最稳"}
+    ],
+    "pitfalls": [
+      "会背 DCL 却漏掉 volatile",
+      "Spring 里还手写单例，和容器生命周期打架"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-interface-abstract",
+    "name": "接口与抽象类",
+    "summary": "接口描述能力、可多实现；抽象类是模板、能放状态。Java 8 后接口也能有默认方法。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java"],
+    "key_points": [
+      {"id": "p1", "text": "类单继承、接口多实现；抽象类可有成员变量和构造器，接口字段默认 public static final"},
+      {"id": "p2", "text": "抽象类适合模板方法，抽出公共状态和步骤；接口适合定义一组能力，如 Comparable、Closeable"},
+      {"id": "p3", "text": "Java 8 接口可有 default/static 方法，Java 9 可有 private；仍不能替代需要实例字段的抽象类"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "新能力你会先抽接口还是抽象类"},
+      {"id": "d2", "intent": "default 方法解决了什么，多实现冲突怎么破"},
+      {"id": "d3", "intent": "抽象类里为什么可以有构造器"}
+    ],
+    "pitfalls": [
+      "把接口当抽象类堆字段",
+      "说接口绝对不能有方法体，停在 Java 7"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-overload-override",
+    "name": "重载与重写",
+    "summary": "重载是编译期静态分派，看声明类型；重写是运行期动态分派，看实际对象。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java"],
+    "key_points": [
+      {"id": "p1", "text": "重载：同名不同参数列表，发生在编译期，按引用的声明类型选方法"},
+      {"id": "p2", "text": "重写：子类提供与父类相同签名的实例方法，运行期按实际类型分派；static/private/final 不能按实例重写"},
+      {"id": "p3", "text": "重写返回类型可协变，可见性不能更严，异常不能更宽；@Override 能在编译期抓住签名写错"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "父类引用指向子类对象，调用重载和重写各走哪份"},
+      {"id": "d2", "intent": "静态方法能重写吗"},
+      {"id": "d3", "intent": "List 引用传入同时有 Collection/List 重载，会调哪个"}
+    ],
+    "pitfalls": [
+      "把重载当成多态",
+      "子类方法想重写却改了参数，实际变成重载"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-integer-cache",
+    "name": "包装类与 Integer 缓存",
+    "summary": "自动装箱会用缓存，Integer 默认 -128～127 是同一对象；比较值用 equals。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java"],
+    "key_points": [
+      {"id": "p1", "text": "基本类型有默认值，包装类可为 null；集合和泛型只能用包装类"},
+      {"id": "p2", "text": "Integer.valueOf 对 -128～127（可配）走缓存，== 可能碰巧为 true，超出范围就是两个对象"},
+      {"id": "p3", "text": "拆箱遇到 null 会 NPE；业务比较用 equals 或 intValue，不要用 == 比包装类"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Integer a=127、b=127，a==b 为什么有时是 true"},
+      {"id": "d2", "intent": "Integer x=null 赋给 int 会怎样"},
+      {"id": "d3", "intent": "Long 有没有类似缓存"}
+    ],
+    "pitfalls": [
+      "用 == 判断两个 Integer 是否相等",
+      "Map 的 value 是 Integer，拆箱前不判空"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-threadlocal",
+    "name": "ThreadLocal",
+    "summary": "值在当前线程的 ThreadLocalMap 里；key 弱引用、value 强引用，线程池必须 finally remove。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "每个 Thread 自带 ThreadLocalMap，key 是 ThreadLocal 弱引用，value 是强引用；不是 ThreadLocal 对象里存所有线程的数据"},
+      {"id": "p2", "text": "线程池复用时不 remove，会串请求上下文，也可能让 value 随着线程一直活着造成泄漏"},
+      {"id": "p3", "text": "普通 ThreadLocal 不传给子线程；InheritableThreadLocal 只在 create 时拷贝一份；线程池场景要用 TTL 在提交时传递"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Map 的 key、value 各是什么引用，泄漏链怎么走"},
+      {"id": "d2", "intent": "线程池里不用 remove 会出什么业务事故"},
+      {"id": "d3", "intent": "父线程的值怎么到线程池 worker，Inheritable 够不够"}
+    ],
+    "pitfalls": [
+      "把 ThreadLocal 当共享缓存",
+      "只说弱引用就能避免泄漏，不 remove"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-aqs",
+    "name": "AQS 原理",
+    "summary": "同步器框架：volatile state 加 CLH 变体队列，子类实现 tryAcquire/tryRelease。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "资源空闲则 CAS 改 state 成功；失败则把线程包成 Node 入双向等待队列，自旋几次后 park"},
+      {"id": "p2", "text": "释放时 tryRelease 成功再 unpark 后继；独占与共享模式不同，ReentrantLock 独占，Semaphore/CountDownLatch 共享"},
+      {"id": "p3", "text": "公平锁先看队列有没有人，非公平锁直接 CAS，吞吐更好；重入是把 state 当持有计数"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "ReentrantLock 加锁失败后线程去哪了"},
+      {"id": "d2", "intent": "公平和非公平在 AQS 里差在哪一步"},
+      {"id": "d3", "intent": "CountDownLatch 的 state 代表什么"}
+    ],
+    "pitfalls": [
+      "把 AQS 说成就是一把锁",
+      "认为每次改 state 都必须 CAS，忽略持有者重入可直接 setState"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-cas",
+    "name": "CAS 与 ABA",
+    "summary": "比较并交换提供无锁原子更新；ABA 要用版本号，自旋太久要考虑阻塞。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "CAS 用预期值和新值原子更新，底层是 CPU 的 cmpxchg 一类指令，是 AtomicInteger、AQS、ConcurrentHashMap 的基础"},
+      {"id": "p2", "text": "ABA：值从 A 变 B 再变回 A，CAS 仍成功，但中间状态已变；AtomicStampedReference/AtomicMarkableReference 带版本"},
+      {"id": "p3", "text": "高竞争时自旋浪费 CPU，AQS 会从自旋转入阻塞；long 在 32 位上还要考虑拆成两个 int 的宽度问题"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "手写一个 CAS 自增循环，失败了怎么办"},
+      {"id": "d2", "intent": "ABA 在什么业务里会真的出事"},
+      {"id": "d3", "intent": "CAS 和 synchronized 你怎么选"}
+    ],
+    "pitfalls": [
+      "把 CAS 当成任意复合操作都原子",
+      "只说 ABA 却举不出栈弹出再压入这类例子"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-jmm",
+    "name": "Java 内存模型",
+    "summary": "主内存与工作内存、happens-before 决定可见性；不要用硬件缓存当面试答案的全部。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "JMM 规定线程如何与主内存交互；工作内存是抽象，不是就是 CPU 缓存"},
+      {"id": "p2", "text": "happens-before：unlock→lock、volatile 写→读、线程 start/join、传递性，编译器和 CPU 不能破坏这些顺序"},
+      {"id": "p3", "text": "没有同步的共享变量，别的线程可能一直看到旧值，也可能看到重排后的中间状态"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "主内存和工作内存分别是什么，和 CPU 缓存是不是一回事"},
+      {"id": "d2", "intent": "列举三条 happens-before"},
+      {"id": "d3", "intent": "单例 DCL 的 volatile 对应哪条规则"}
+    ],
+    "pitfalls": [
+      "把 JMM 和 JVM 运行时数据区混成一张图",
+      "说了缓存一致性就不提 happens-before"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-synchronized-upgrade",
+    "name": "synchronized 锁升级",
+    "summary": "从偏向、轻量级到重量级逐步升级；JDK15 起偏向锁默认关，JDK18 已移除。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "对象头 Mark Word 记录锁状态；早期路径是无锁→偏向→轻量级（CAS 自旋）→重量级（操作系统 mutex）"},
+      {"id": "p2", "text": "偏向锁给只有一个线程进入的场景少 CAS；出现竞争先膨胀到轻量级，再不行才重量级阻塞"},
+      {"id": "p3", "text": "偏向锁增加复杂度且收益不稳定，JDK15 默认关闭，JDK18 废弃；面试要能讲历史，也要知道现状"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "画一下锁升级，什么条件从轻量级到重量级"},
+      {"id": "d2", "intent": "为什么还说 synchronized 不慢"},
+      {"id": "d3", "intent": "你们线上 JDK 版本还开偏向锁吗"}
+    ],
+    "pitfalls": [
+      "把 synchronized 还说成只有重量级锁",
+      "背升级路径却不知道偏向锁已经被砍"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-thread-lifecycle",
+    "name": "线程生命周期",
+    "summary": "NEW、RUNNABLE、阻塞类状态、TERMINATED；sleep 是 TIMED_WAITING，不是 RUNNABLE。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "Thread 状态：NEW、RUNNABLE（含就绪和正在跑）、BLOCKED、WAITING、TIMED_WAITING、TERMINATED"},
+      {"id": "p2", "text": "sleep/join(timeout)/wait(timeout)/LockSupport.parkNanos 进 TIMED_WAITING；synchronized 抢锁失败是 BLOCKED"},
+      {"id": "p3", "text": "start 才能真正起线程，直接 run 还在当前线程；线程结束不能再 start"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Thread.sleep 之后是什么状态"},
+      {"id": "d2", "intent": "wait 和 sleep 对锁的影响差在哪"},
+      {"id": "d3", "intent": "不用 stop，怎么让循环线程退出"}
+    ],
+    "pitfalls": [
+      "把 RUNNABLE 理解成一定占着 CPU",
+      "调用 stop 或 suspend 停线程"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-interrupt",
+    "name": "线程中断",
+    "summary": "interrupt 只是设标志或唤醒阻塞；响应方要自己停，吞掉 InterruptedException 等于屏蔽取消。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "interrupt() 把中断标志设为 true；若线程在 sleep/wait/join，会清标志并抛 InterruptedException"},
+      {"id": "p2", "text": "业务循环应检查 Thread.currentThread().isInterrupted() 或响应异常后退出，不能依赖 stop"},
+      {"id": "p3", "text": "catch InterruptedException 后若还要向上传递，要再 interrupt() 恢复标志，否则线程池等上层收不到取消"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "对一个在跑计算的线程 interrupt，它马上停吗"},
+      {"id": "d2", "intent": "sleep 被打断后标志位是什么"},
+      {"id": "d3", "intent": "线程池 shutdownNow 靠的是什么"}
+    ],
+    "pitfalls": [
+      "catch InterruptedException 后空着继续跑",
+      "用废弃的 Thread.stop"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-completable-future",
+    "name": "CompletableFuture",
+    "summary": "异步编排用 thenApply/thenCompose/allOf；默认线程池是 ForkJoinPool.commonPool，生产要自带 Executor。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "supplyAsync/runAsync 提交异步任务；thenApply 转换结果，thenCompose 展开嵌套 Future，thenCombine 合并两个独立结果"},
+      {"id": "p2", "text": "allOf 等全部完成，anyOf 等最先完成；异常用 exceptionally/handle，否则 get 时包成 CompletionException"},
+      {"id": "p3", "text": "不指定 Executor 会用公共 ForkJoinPool，和 Tomcat 线程、CPU 密集型任务抢；业务要隔离线程池并设超时"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "并行查三个下游再汇总，怎么编排"},
+      {"id": "d2", "intent": "thenApply 和 thenCompose 差在哪"},
+      {"id": "d3", "intent": "为什么不要用默认的 commonPool"}
+    ],
+    "pitfalls": [
+      "在 thenApply 里再做阻塞 RPC 还跑在 commonPool",
+      "allOf 之后不 join 就当结果已经齐了"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-countdownlatch",
+    "name": "CountDownLatch、CyclicBarrier、Semaphore",
+    "summary": "一个是等一组完成，一个是互相等齐可重置，一个是限流许可。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "CountDownLatch：主线程 await，工作线程 countDown 到 0；一次性，不能重置"},
+      {"id": "p2", "text": "CyclicBarrier：一批线程互相 await 到齐后可选执行 barrier action，可循环用"},
+      {"id": "p3", "text": "Semaphore：acquire/release 控制并发数，可做连接池、接口限流；许可可被别的线程释放"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "等三个远程调用都回来，用 Latch 还是 Barrier"},
+      {"id": "d2", "intent": "Barrier 为什么能循环，Latch 为什么不能"},
+      {"id": "d3", "intent": "Semaphore 和线程池限流怎么分工"}
+    ],
+    "pitfalls": [
+      "countDown 漏调导致 await 永久阻塞",
+      "把 Semaphore 当互斥锁却在异常路径不 release"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-readwrite-lock",
+    "name": "读写锁",
+    "summary": "读读并发、读写互斥；适合读多写少。写锁饥饿和升降级方向要说清。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "ReentrantReadWriteLock 读锁共享、写锁独占；AQS state 高 16 位读计数、低 16 位写计数"},
+      {"id": "p2", "text": "写可降级为读（持有写锁再拿读锁再放写锁）；读不能直接升级为写，否则容易死锁"},
+      {"id": "p3", "text": "非公平下写可能被连续读饿死，公平模式更礼貌但吞吐差；读多写少才值得，写多不如独占锁"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "缓存本地副本用读写锁，更新时顺序怎么写"},
+      {"id": "d2", "intent": "为什么不能读锁升级成写锁"},
+      {"id": "d3", "intent": "StampedLock 相对它改进了什么"}
+    ],
+    "pitfalls": [
+      "持有读锁的线程再去拿写锁",
+      "写多读少还上读写锁增加复杂度"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-virtual-thread",
+    "name": "虚拟线程",
+    "summary": "JDK21 把阻塞 IO 挂到载体线程上，适合海量阻塞任务；CPU 密集和限流仍要线程池。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "虚拟线程由 JVM 调度，挂在少量平台线程（载体）上；阻塞时会卸载，不再绑死一个 OS 线程"},
+      {"id": "p2", "text": "适合高并发、会阻塞的 IO（JDBC、HTTP）；synchronized 或本地方法长时间占着可能钉住载体线程"},
+      {"id": "p3", "text": "线程池仍用于限流、隔离和 CPU 密集；有了虚拟线程不等于取消池化，也不等于可以无界创建阻塞任务而不管下游"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "已经有虚拟线程，为什么还要线程池"},
+      {"id": "d2", "intent": "虚拟线程里用 synchronized 有什么风险"},
+      {"id": "d3", "intent": "Tomcat 或 Spring 里你们开了虚拟线程吗"}
+    ],
+    "pitfalls": [
+      "把虚拟线程当更快的 CPU 并行",
+      "在虚拟线程里跑重计算还不限制数量"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-deadlock",
+    "name": "Java 死锁",
+    "summary": "互相持锁等待；要用 jstack/jcmd 找循环，靠锁序、超时和缩小临界区预防。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "死锁四条件：互斥、占有并等待、不可剥夺、循环等待；典型是两个线程以相反顺序加两把锁"},
+      {"id": "p2", "text": "jstack、jcmd Thread.print、JConsole 能看到 Blocked 和锁依赖环；生产要保留现场再决定是否重启"},
+      {"id": "p3", "text": "预防：全局锁序、tryLock 超时、缩小 synchronized 范围、少嵌套锁；检测到后往往只能重启该进程"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "线上线程卡住，你怎么证明是死锁"},
+      {"id": "d2", "intent": "两把锁怎么规定顺序"},
+      {"id": "d3", "intent": "tryLock 超时失败后业务怎么回滚"}
+    ],
+    "pitfalls": [
+      "不看堆栈就重启，下次还死",
+      "锁顺序只在文档里写，代码路径没保证"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-thread-pool-sizing",
+    "name": "线程池怎么定大小",
+    "summary": "CPU 密集接近核数，IO 密集才放大；先队列后扩容是吞吐优先，队列要有界。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "CPU 密集：核数或核数+1，避免上下文切换；IO 密集可以到 2N 甚至更高，但要被下游和内存约束"},
+      {"id": "p2", "text": "JDK 池是先到 core、再入队、队满才到 max，偏吞吐；要低延迟可考虑自定义先扩容再排队"},
+      {"id": "p3", "text": "按任务类型拆池，避免慢 IO 占满计算池；有界队列加拒绝策略和监控，不要 SynchronousQueue 加无界 max 把机器打满"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "8 核机器上 CPU 密集和 RPC 密集分别怎么定 core"},
+      {"id": "d2", "intent": "先入队后扩容和先扩容后入队各适合什么"},
+      {"id": "d3", "intent": "CallerRunsPolicy 在 Tomcat 线程里执行会怎样"}
+    ],
+    "pitfalls": [
+      "所有业务共用一个无界队列池",
+      "IO 任务按 2N 估算却不看下游数据库连接数"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-sleep-wait",
+    "name": "sleep 与 wait",
+    "summary": "sleep 不释放锁只让出 CPU；wait 必须在 synchronized 里并释放监视器。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "Thread.sleep 不释放当前持有的监视器，时间到或被 interrupt 后继续"},
+      {"id": "p2", "text": "Object.wait 必须持有该对象锁，进入等待集并释放锁；notify/notifyAll 唤醒后还要重新抢锁"},
+      {"id": "p3", "text": "等待条件要用 while 而不是 if，防止虚假唤醒；多条件用 Lock+Condition 比单一 wait 集更清晰"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "持有锁时 sleep，别的线程能进同一个 synchronized 吗"},
+      {"id": "d2", "intent": "wait 不用 synchronized 包会怎样"},
+      {"id": "d3", "intent": "为什么 wait 条件要写成 while"}
+    ],
+    "pitfalls": [
+      "用 sleep 做线程间协作",
+      "notify 错对象或唤醒后不当成条件可能仍不成立"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-proxy",
+    "name": "动态代理",
+    "summary": "JDK 代理只能对接口，CGLIB 继承具体类；Spring AOP 默认能接口就走 JDK。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "spring"],
+    "key_points": [
+      {"id": "p1", "text": "静态代理编译期写好；JDK 动态代理运行期实现接口，调用进 InvocationHandler"},
+      {"id": "p2", "text": "CGLIB 生成子类拦截方法，目标类或方法 final 就拦不住；构造器会走两次要注意副作用"},
+      {"id": "p3", "text": "Spring 若目标实现了接口，默认 JDK 代理，自调用不进代理；强制 CGLIB 也不能解决 this 调用"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "一个类没实现接口，Spring 事务代理怎么建"},
+      {"id": "d2", "intent": "final 方法为什么切面无效"},
+      {"id": "d3", "intent": "JDK 代理和 CGLIB 你怎么选"}
+    ],
+    "pitfalls": [
+      "以为所有 Spring Bean 都是 CGLIB 子类",
+      "在构造器里调被代理方法还指望切面生效"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-stream",
+    "name": "Stream API",
+    "summary": "惰性中间操作、一次终端操作；并行流用公共 ForkJoinPool，有副作用时不要用。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java"],
+    "key_points": [
+      {"id": "p1", "text": "filter/map/flatMap 是中间操作，lazy；collect/findFirst/reduce 触发实际计算，一条流只能消费一次"},
+      {"id": "p2", "text": "有状态操作 sorted/distinct 要缓冲；短路操作 findFirst/limit 可以少干活"},
+      {"id": "p3", "text": "parallel() 默认 commonPool，和业务线程池打架，且无序、难调试；有共享可变状态时别并行"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "filter 之后不 collect 会不会执行谓词"},
+      {"id": "d2", "intent": "什么时候用 parallelStream 是错的"},
+      {"id": "d3", "intent": "flatMap 和 map 差在哪"}
+    ],
+    "pitfalls": [
+      "在 forEach 里改外部 ArrayList 还开并行",
+      "一条 Stream 用两次终端操作"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "java-blocking-queue",
+    "name": "阻塞队列",
+    "summary": "线程池的工作队列就是阻塞队列；有界、公平、是否阻塞决定背压。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "concurrent"],
+    "key_points": [
+      {"id": "p1", "text": "put/take 阻塞，offer/poll 可超时或立即失败；ArrayBlockingQueue 有界数组，LinkedBlockingQueue 默认近乎无界"},
+      {"id": "p2", "text": "SynchronousQueue 不存元素，移交成功才返回，CachedThreadPool 用它所以会一直建线程"},
+      {"id": "p3", "text": "DelayQueue/PriorityBlockingQueue 可做延迟和优先级；无界队列会把拒绝策略和 max 线程变成摆设"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "线程池队列你选 Array 还是 Linked，容量怎么定"},
+      {"id": "d2", "intent": "SynchronousQueue 为什么让 CachedThreadPool 危险"},
+      {"id": "d3", "intent": "offer 失败和 put 阻塞对接口延迟意味着什么"}
+    ],
+    "pitfalls": [
+      "线程池配无界 LinkedBlockingQueue",
+      "用 BlockingQueue 当普通 List 到处 poll"
+    ],
+    "status": "published"
   }
 ]

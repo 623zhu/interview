@@ -44,5 +44,695 @@
       "生产没开 dump，事后无法复盘"
     ],
     "status": "published"
+  },
+  {
+    "key": "jvm-runtime-areas",
+    "name": "运行时数据区",
+    "summary": "PC、虚拟机栈、本地方法栈线程私有；堆和方法区线程共享。这是内存布局，不是 JMM。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "程序计数器记当前字节码位置，切回线程时靠它恢复；规范里唯一不规定 OOM 的区域"},
+      {"id": "p2", "text": "虚拟机栈按方法压栈帧（局部变量表、操作数栈、动态链接、返回地址）；过深是 StackOverflowError，创建线程申请不到栈是 OOM"},
+      {"id": "p3", "text": "堆放对象实例，方法区放类元数据；JDK8 起方法区在 HotSpot 里由元空间实现，直接内存不属于规范里的五块"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "哪些区域线程私有、哪些共享"},
+      {"id": "d2", "intent": "它和 Java 内存模型（JMM）差在哪"},
+      {"id": "d3", "intent": "Native 方法执行时程序计数器是什么值"}
+    ],
+    "pitfalls": [
+      "把运行时数据区和 JMM 画成一张图",
+      "说方法区就是永久代，不提 JDK8 元空间"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-heap-layout",
+    "name": "堆分代布局",
+    "summary": "传统堆是 Eden + 两个 Survivor + 老年代；G1 用等大 Region 逻辑分代，元空间不在堆里。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "新对象多半进 Eden，Young GC 后存活对象进 Survivor，两个 Survivor 轮换，常见初始比例 Eden:S0:S1=8:1:1，收集器可能自适应调整"},
+      {"id": "p2", "text": "老年代放熬过多次 GC 的对象和大对象；老年代回收不等于 Full GC"},
+      {"id": "p3", "text": "G1 把堆切成等大 Region，Eden/Survivor/Old 都是 Region 角色，不必物理连续；元空间用本地内存，不算堆的一部分"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么新生代要两个 Survivor 而不是一块"},
+      {"id": "d2", "intent": "G1 的堆布局和 Parallel 差在哪"},
+      {"id": "d3", "intent": "-Xmn 和 NewRatio 同时配会怎样"}
+    ],
+    "pitfalls": [
+      "把元空间画进堆",
+      "把老年代 GC 一律叫 Full GC"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-metaspace",
+    "name": "元空间与永久代",
+    "summary": "JDK8 用本地内存的元空间代替永久代；上限可调，类加载器泄漏一样会 Metaspace OOM。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "方法区是规范概念；永久代是 JDK7 及以前 HotSpot 实现，容量死、动态代理类一多就 PermGen OOM"},
+      {"id": "p2", "text": "元空间用本地内存存类元数据；MaxMetaspaceSize 是上限，MetaspaceSize 是首次触发元空间 GC 的阈值，不是预分配大小"},
+      {"id": "p3", "text": "类要卸载，需 Class 对象、实例和定义它的 ClassLoader 都不可达；热部署、自定义加载器泄漏才是根因，光调大上限治标"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么要用元空间替换永久代"},
+      {"id": "d2", "intent": "静态变量现在放哪，还在元空间吗"},
+      {"id": "d3", "intent": "线上 Metaspace 持续涨，你怎么查是不是 ClassLoader 泄漏"}
+    ],
+    "pitfalls": [
+      "认为元空间不会 OOM",
+      "把 MetaspaceSize 当成固定容量"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-direct-memory",
+    "name": "直接内存",
+    "summary": "NIO DirectByteBuffer 把数据放堆外，少一次拷贝；分配贵、回收靠 Cleaner，不一定受 MaxDirectMemorySize 全管。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "ByteBuffer 对象在堆里，真正的缓冲区在堆外；适合大块、长生命周期的 I/O，不适合每个小请求都 allocateDirect"},
+      {"id": "p2", "text": "堆外内存不走普通 Young GC 路径，包装对象被回收后靠 Cleaner 释放，泄漏时堆看着不大、进程 RSS 却很高"},
+      {"id": "p3", "text": "MaxDirectMemorySize 管标准 NIO 直接缓冲；线程栈、元空间、Netty/JNI 自己申请的本地内存要另看"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么 NIO 要用直接内存，是不是零拷贝"},
+      {"id": "d2", "intent": "Direct buffer memory OOM 怎么查"},
+      {"id": "d3", "intent": "Netty 的堆外内存泄漏你怎么定位"}
+    ],
+    "pitfalls": [
+      "把直接内存当成零拷贝的全部",
+      "每个请求都申请 DirectByteBuffer"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-object-create",
+    "name": "对象创建过程",
+    "summary": "类加载完成后分配内存、赋零值、设对象头，再执行构造；分配可用指针碰撞或空闲列表。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "new 时若类未初始化会先走加载到初始化；然后在堆（通常 Eden/TLAB）划一块内存"},
+      {"id": "p2", "text": "内存清零、填写 Mark Word 和类型指针，这时对象已能被 JVM 识别，但字段还是默认值"},
+      {"id": "p3", "text": "最后执行 <init>；逃逸分析可能让这次分配被标量替换掉，所以不能说每个 new 都真的在堆上落对象"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "从字节码看 new 指令后面还跟了什么"},
+      {"id": "d2", "intent": "指针碰撞和空闲列表分别配哪种堆整理方式"},
+      {"id": "d3", "intent": "父类构造和实例字段赋值谁先执行"}
+    ],
+    "pitfalls": [
+      "把分配内存和执行构造混成一步",
+      "忽略 TLAB，认为每次分配都要锁整堆"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-object-header",
+    "name": "对象内存布局",
+    "summary": "对象 = 对象头 + 实例数据 + 对齐填充；Mark Word 记锁和哈希，类型指针指向 Klass。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "对象头含 Mark Word（哈希、GC 年龄、锁状态）和 Klass 指针；数组再加一个长度字段"},
+      {"id": "p2", "text": "开启压缩指针后，堆里引用和 Klass 指针常压成 4 字节，对象更省，堆一般别超过约 32G"},
+      {"id": "p3", "text": "对齐到 8 字节；空对象也不是 0 字节。锁信息就写在 Mark Word 里，和 synchronized 升级是同一块内存"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "一个空 Object 大约占多少字节，怎么算"},
+      {"id": "d2", "intent": "压缩指针关掉会怎样"},
+      {"id": "d3", "intent": "identityHashCode 之后还能偏向锁吗"}
+    ],
+    "pitfalls": [
+      "把引用大小固定说成 8 字节",
+      "认为对象头和锁是两套独立结构"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-tlab",
+    "name": "TLAB",
+    "summary": "Eden 里给每个线程划一块本地分配缓冲区，减少分配指针竞争；它仍在堆上，要被 GC。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "没有 TLAB 时多线程 new 要争同一个 bump pointer；有了之后本线程只挪自己的指针"},
+      {"id": "p2", "text": "TLAB 在 Eden，不够就申请新的或走慢路径；大对象不一定进 TLAB"},
+      {"id": "p3", "text": "线程私有只指分配权，对象仍可被别的线程引用，也照样参与 GC"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "TLAB 在栈上还是堆上"},
+      {"id": "d2", "intent": "TLAB 用完了会发生什么"},
+      {"id": "d3", "intent": "它和逃逸分析、栈上分配是不是一回事"}
+    ],
+    "pitfalls": [
+      "把 TLAB 说成栈上分配",
+      "认为 TLAB 里的对象别的线程看不见"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-escape-analysis",
+    "name": "逃逸分析",
+    "summary": "JIT 判断对象会不会逃出方法或线程；未逃逸可做标量替换和锁消除，不等于一定栈上分配。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "对象作为返回值、存进字段、交给别的线程，就算逃逸；只在方法内用才可能被优化"},
+      {"id": "p2", "text": "HotSpot 常见收益是标量替换（拆成几个局部变量）和锁消除，而不是保证整对象分配在栈上"},
+      {"id": "p3", "text": "只在 JIT 编译后生效，解释执行没有；没逃逸也不保证优化一定发生"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "举一个会被标量替换的例子"},
+      {"id": "d2", "intent": "synchronized(new Object()) 为什么可能被优化掉"},
+      {"id": "d3", "intent": "怎么验证逃逸分析有没有生效"}
+    ],
+    "pitfalls": [
+      "断言未逃逸对象一定在栈上",
+      "用解释模式的微基准否定逃逸分析"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-references",
+    "name": "四种引用",
+    "summary": "强引用保活，软引用内存紧时清，弱引用下次 GC 就清，虚引用只配合队列做清理通知。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "强引用链可达就不会回收；两个对象互相引用但从 GC Roots 不可达，照样能收"},
+      {"id": "p2", "text": "软引用适合可丢的缓存但时机不稳定；弱引用如 WeakHashMap、ThreadLocalMap 的 key，get 随时可能 null"},
+      {"id": "p3", "text": "虚引用 get 恒为 null，必须配 ReferenceQueue，用来在对象回收后释放堆外资源；引用入队不会自动跑你的清理逻辑"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "软引用和弱引用谁更先被回收"},
+      {"id": "d2", "intent": "WeakHashMap 为什么还可能泄漏"},
+      {"id": "d3", "intent": "DirectByteBuffer 的清理跟哪种引用有关"}
+    ],
+    "pitfalls": [
+      "把软引用当成可靠 LRU 缓存",
+      "引用队列入队后以为资源已经释放了"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-leak-vs-overflow",
+    "name": "内存泄漏与溢出",
+    "summary": "泄漏是该回收的对象被引用链挂住；溢出是当时分配失败。泄漏可以拖成溢出，溢出不一定有泄漏。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "泄漏常见于静态集合、未注销监听、线程池 ThreadLocal 未 remove、连接/流没关"},
+      {"id": "p2", "text": "溢出是 Heap/Metaspace/Direct 等区域当时申请不到；一次读超大文件也能直接 OOM"},
+      {"id": "p3", "text": "流量稳定时，老年代回收后占用仍单边上涨，优先怀疑泄漏；回收后水位平稳、只在高峰挂，更像容量或大对象"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "怎么用监控曲线区分泄漏和高峰"},
+      {"id": "d2", "intent": "举一个项目里真实的泄漏"},
+      {"id": "d3", "intent": "GC overhead limit exceeded 通常意味着什么"}
+    ],
+    "pitfalls": [
+      "把所有 OOM 都叫泄漏",
+      "看到占用高就先加堆，不看回收后水位"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-stackoverflow",
+    "name": "栈溢出",
+    "summary": "调用过深或栈帧过大触发 StackOverflowError；和无法创建线程的 OOM、堆 OOM 不是一类问题。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "每调一层方法压一个栈帧；无限递归或树太深最常见。大数组在堆上，局部变量表只存引用，不会单靠数组撑爆栈"},
+      {"id": "p2", "text": "优先改递归为迭代或加终止条件；-Xss 调大能多几层，但每个线程更占本地内存，线程数上限下降"},
+      {"id": "p3", "text": "unable to create new native thread 是本地内存或 OS 线程数不够，不是 StackOverflowError"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么调大 -Xss 不是首选"},
+      {"id": "d2", "intent": "栈溢出的堆栈你怎么读，怎么定位递归点"},
+      {"id": "d3", "intent": "虚拟线程会不会把这个问题消掉"}
+    ],
+    "pitfalls": [
+      "用加大 -Xss 掩盖死递归",
+      "把栈溢出和线程创建失败当成同一种 OOM"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-classload-process",
+    "name": "类加载过程",
+    "summary": "加载、验证、准备、解析、初始化五步；准备赋零值，初始化才跑 <clinit>。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "加载：按全限定名拿字节流，在方法区落类结构，堆里生成 Class 对象当入口"},
+      {"id": "p2", "text": "准备给类变量分配内存并赋零值（int 是 0 不是代码里的 10）；static final 基本类型/String 常量例外，准备阶段就是真值"},
+      {"id": "p3", "text": "解析把符号引用变直接引用，可延迟到使用时；初始化执行 <clinit>，合并静态赋值和静态块，父类先于子类"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "static int x=10 在准备阶段是几"},
+      {"id": "d2", "intent": "解析一定在初始化之前吗"},
+      {"id": "d3", "intent": "接口的 <clinit> 什么时候跑"}
+    ],
+    "pitfalls": [
+      "把加载和初始化混成一步",
+      "认为准备阶段已经执行了静态代码块"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-parent-delegation",
+    "name": "双亲委派",
+    "summary": "先请父加载器，父找不到自己再加载，用来复用和保护核心类；类的身份是全名加定义加载器。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "Bootstrap（核心模块/rt.jar）→ Platform/Extension → AppClassLoader；Bootstrap 是 JVM 一部分，getClassLoader() 为 null"},
+      {"id": "p2", "text": "自己写 java.lang.String 也加载不上，因为启动类加载器已经定义过；这是安全和唯一性，不是继承关系"},
+      {"id": "p3", "text": "不同自定义加载器仍可各自定义同名类，JVM 里是两个类型；双亲委派是默认策略，不是强制规范"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么不能自己定义 java.lang.String"},
+      {"id": "d2", "intent": "JDK9 之后扩展类加载器变成了什么"},
+      {"id": "d3", "intent": "两个同名类什么时候 equals 或转型会失败"}
+    ],
+    "pitfalls": [
+      "说双亲是父子继承",
+      "认为全 JVM 里同名类只能有一份"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-break-delegation",
+    "name": "打破双亲委派",
+    "summary": "SPI/JDBC、Tomcat、热部署会打破委派；常见手段是重写 loadClass 或用线程上下文类加载器。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "JDBC：DriverManager 由启动类加载器加载，但驱动实现在应用 classpath，必须用 TCCL 回过头来加载实现类"},
+      {"id": "p2", "text": "Tomcat 每个 WebApp 一个 WebAppClassLoader，先加载自己的类再委派，避免应用间互相看见；公共 jar 仍走父"},
+      {"id": "p3", "text": "热部署、OSGi 也要打破才能卸载或隔离；乱重写 loadClass 容易把核心类加载乱，优先考虑 findClass"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "SPI 为什么必须打破双亲委派"},
+      {"id": "d2", "intent": "线程上下文类加载器是谁设置的"},
+      {"id": "d3", "intent": "Tomcat 两个 war 里同名类会冲突吗"}
+    ],
+    "pitfalls": [
+      "把打破说成完全不用父加载器",
+      "自定义加载器重写 loadClass 却忘了还要保护 java.*"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-class-init",
+    "name": "类初始化时机",
+    "summary": "new、访问静态字段/方法、反射、main、初始化子类时才会初始化；通过子类访问父类静态字段只初始化父类。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "主动使用才初始化：new、get/put 本类静态变量、调用静态方法、反射、main、MethodHandle 指定的初始化"},
+      {"id": "p2", "text": "Child.NAME 若字段定义在 Parent，只初始化 Parent；引用数组、用常量（编译期已内联）都不触发"},
+      {"id": "p3", "text": "<clinit> 由 JVM 加锁保证只跑一次，多线程并发初始化是线程安全的，其中一个跑完其他再进入"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Class.forName 和 ClassLoader.loadClass 谁会初始化"},
+      {"id": "d2", "intent": "接口里的静态字段会不会带上实现类一起初始化"},
+      {"id": "d3", "intent": "死循环写在静态块里，另一个线程去用这个类会怎样"}
+    ],
+    "pitfalls": [
+      "认为 loadClass 一定会执行静态块",
+      "通过子类访问父类静态字段却期望子类静态块也跑"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-reachability",
+    "name": "可达性分析",
+    "summary": "从 GC Roots 出发标记存活对象；引用计数无法处理环，HotSpot 不用它做主判定。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "GC Roots 包括：栈帧局部变量、静态字段、JNI 引用、已启动未结束的线程等"},
+      {"id": "p2", "text": "引用计数遇循环引用无法回收，JVM 主流不用它判断对象死活"},
+      {"id": "p3", "text": "不可达对象会经历一次 finalize 机会（已过时且不可靠），真正回收看后续 GC，业务不要依赖 finalize"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "两个对象互相引用为什么还能被回收"},
+      {"id": "d2", "intent": "方法里的局部变量什么时候不再是 Root"},
+      {"id": "d3", "intent": "JNI 全局引用没释放会怎样"}
+    ],
+    "pitfalls": [
+      "把引用计数当成 JVM 的实现",
+      "用 finalize 做资源关闭"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-gc-algorithms",
+    "name": "GC 算法",
+    "summary": "标记-清除有碎片，复制适合年轻代，标记-整理适合老年代；分代是策略，不是第四种并列算法。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "标记-清除：实现简单，清除后碎片多，大对象可能再触发 GC；CMS 老年代走这条"},
+      {"id": "p2", "text": "复制：把存活对象拷到另一块，无碎片但浪费空间；年轻代用 Eden+两个 Survivor 把浪费压到约 10%"},
+      {"id": "p3", "text": "标记-整理：把存活对象滑到一端再清尾巴，适合老年代高存活；G1 常规回收是按 Region 复制，效果上也在整理碎片"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "新生代为什么更适合复制"},
+      {"id": "d2", "intent": "标记-清除的碎片会引发什么线上问题"},
+      {"id": "d3", "intent": "移动对象后引用怎么更新"}
+    ],
+    "pitfalls": [
+      "把分代收集和三种算法并列",
+      "说复制一定对半分，忽略 Eden/Survivor"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-promotion",
+    "name": "对象晋升",
+    "summary": "年龄到阈值、Survivor 放不下、动态年龄、大对象，都会让对象进老年代；晋升快不等于泄漏。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "对象在 Survivor 里每熬过一次 Young GC 年龄 +1，达到 MaxTenuringThreshold（常见上限 15）可晋升"},
+      {"id": "p2", "text": "Survivor 装不下会提前晋升；收集器还可能按各年龄占用动态降低阈值"},
+      {"id": "p3", "text": "部分收集器大对象直接进老年代；G1 超过 Region 一半算 Humongous，走连续老年代 Region"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "老年代涨得很快，除了泄漏还要看什么"},
+      {"id": "d2", "intent": "年轻代过小会怎样影响晋升"},
+      {"id": "d3", "intent": "PretenureSizeThreshold 对 G1 有效吗"}
+    ],
+    "pitfalls": [
+      "认定所有对象都是 15 次才晋升",
+      "把晋升快直接当成内存泄漏"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-full-gc",
+    "name": "Full GC 触发",
+    "summary": "整堆兜底回收，停顿通常最长。晋升失败、G1 跟不上分配、元空间压力、System.gc 都可能走到这。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "Major GC 在不同资料里含义不一，别和 Full GC 划等号；G1 Mixed GC 只收部分老年代 Region，不是 Full GC"},
+      {"id": "p2", "text": "常见原因：老年代分配/晋升失败、G1 转移失败或 Humongous 找不到连续 Region、元空间要卸载类、显式 System.gc()"},
+      {"id": "p3", "text": "CMS 的 Concurrent Mode Failure 会退化成停顿式整堆回收；G1 Full GC 从 JDK10 起可并行，但仍 STW"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "GC 日志里你怎么确认是 Full GC 还是 Mixed GC"},
+      {"id": "d2", "intent": "System.gc 一定触发 Full GC 吗"},
+      {"id": "d3", "intent": "频繁 Full GC 你先看哪几个指标"}
+    ],
+    "pitfalls": [
+      "把 Young GC 停顿长也叫 Full GC",
+      "生产随便调用 System.gc 当释放内存"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-safepoint",
+    "name": "安全点",
+    "summary": "STW 前线程要跑到 JVM 能数清引用的位置；等安全点的时间也会变成业务卡顿。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "安全点多在方法调用、循环回边等位置；任意机器指令处停下来，引用不一定能准确识别"},
+      {"id": "p2", "text": "一次可见停顿 = 等线程到安全点 + 真正 GC 工作；Counted 死循环、超长 JNI 可能让 Time-to-Safepoint 很长"},
+      {"id": "p3", "text": "安全点不只给 GC 用，去优化、某些类重定义也会用；查停顿要看 safepoint 日志，别只怪收集器"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么不能在任意指令暂停所有线程"},
+      {"id": "d2", "intent": "怎么判断卡顿是 TTSP 而不是 GC 本身"},
+      {"id": "d3", "intent": "阻塞在 lock 或 native 的线程怎么协调"}
+    ],
+    "pitfalls": [
+      "把 STW 时长完全等同于 GC 算法耗时",
+      "写没有安全点检查的超长计数循环"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-three-color",
+    "name": "三色标记与漏标",
+    "summary": "并发标记时黑对象指向白对象且原路径断开就会漏标；CMS 用增量更新，G1 用 SATB。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "白未发现、灰已发现但引用没扫完、黑自身和引用都扫完；颜色是逻辑分类"},
+      {"id": "p2", "text": "漏标条件：黑指向白，同时断开了灰/白原来的可达路径；多标只会变成浮动垃圾，漏标会回收活对象"},
+      {"id": "p3", "text": "增量更新记录新增引用（CMS）；SATB 在引用被覆盖时记下旧值，维持标记开始时的快照（G1）。SATB 更保守，浮动垃圾更多"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "画一个漏标的引用变化"},
+      {"id": "d2", "intent": "CMS 和 G1 各用哪种写屏障语义"},
+      {"id": "d3", "intent": "浮动垃圾为什么宁可多留一轮"}
+    ],
+    "pitfalls": [
+      "把漏标和多标说反",
+      "认为 SATB 会把整个堆复制一份"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-cms-vs-g1",
+    "name": "CMS 与 G1",
+    "summary": "CMS 并发标记-清除老年代，碎片和并发失败是硬伤，JDK14 已移除；G1 按 Region 复制，用停顿目标选回收集。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "CMS 配 ParNew，初始标记/重新标记 STW，并发标记和清除与应用一起跑；碎片多、有浮动垃圾，Concurrent Mode Failure 会退回 Serial Old"},
+      {"id": "p2", "text": "G1 管整个堆，Young/Mixed 用复制，按 MaxGCPauseMillis 选收益高的 Region；停顿目标是尽量满足，不是硬上限"},
+      {"id": "p3", "text": "新项目不要再选 CMS。堆中等、要平衡吞吐和延迟用 G1；批处理看 Parallel；延迟极敏感再评估 ZGC"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "CMS 为什么会产生碎片"},
+      {"id": "d2", "intent": "G1 失败时会不会切到 Serial Old"},
+      {"id": "d3", "intent": "你们线上 JDK 版本默认收集器是哪个"}
+    ],
+    "pitfalls": [
+      "在 JDK17 项目里仍推荐 CMS",
+      "把 MaxGCPauseMillis 当成每次都不超过的 SLA"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-g1-region",
+    "name": "G1 Region 与大对象",
+    "summary": "堆切成等大 Region，角色可变；超过 Region 一半的对象走 Humongous，连续 Region 不够就会分配失败甚至 Full GC。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "Region 大小按堆自动选（1～32MB 的 2 次幂），Young GC 只收 Eden+Survivor 那批 Region"},
+      {"id": "p2", "text": "并发标记后 Mixed GC 每次带上部分老年代 Region，避免一次搬完整个老年代"},
+      {"id": "p3", "text": "Humongous 对象直接占连续老年代 Region，尾部浪费明显；堆里有空洞但凑不出连续块时，看起来像还有空间却分配失败"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Humongous 分配失败你怎么处理，改 Region 还是改业务"},
+      {"id": "d2", "intent": "Young GC、并发标记、Mixed GC 的先后关系"},
+      {"id": "d3", "intent": "G1 有碎片吗"}
+    ],
+    "pitfalls": [
+      "一次加载超大 byte[] 还不拆包",
+      "认为 G1 完全没有碎片"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-remembered-set",
+    "name": "卡表与记忆集",
+    "summary": "Young GC 不能每次扫整个老年代；写屏障记下跨代/跨 Region 引用，GC 只扫脏卡或 RSet。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "老年代对象可能引用年轻代，不处理这些引用会误回收；全堆扫描又太贵"},
+      {"id": "p2", "text": "传统分代用 Card Table：写引用时写屏障把对应卡标脏，Young GC 只扫脏卡"},
+      {"id": "p3", "text": "G1 每个 Region 有 Remembered Set，记录谁指向我；这是 GC 写屏障，和 JMM 的内存屏障不是一回事"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "没有卡表，Young GC 要多扫什么"},
+      {"id": "d2", "intent": "RSet 过大说明什么，会拖慢停顿吗"},
+      {"id": "d3", "intent": "写屏障会不会让普通赋值变慢"}
+    ],
+    "pitfalls": [
+      "把 GC 写屏障和 volatile 内存屏障混为一谈",
+      "以为 Young GC 完全不用看老年代"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-zgc",
+    "name": "ZGC",
+    "summary": "标记和对象转移都尽量并发，用染色指针和读屏障保证正确性；停顿不随堆大小线性涨，但要额外 CPU 和内存。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "G1 的转移在 STW 里复制，存活多停顿就长；ZGC 把标记、转移、整理都放到并发阶段，只留很短的 STW"},
+      {"id": "p2", "text": "染色指针把 GC 元数据存在引用里，应用读对象时经读屏障，对象已被搬走也能转到新地址"},
+      {"id": "p3", "text": "JDK15 转正，JDK21 可开分代 ZGC；适合大堆、P99 被 GC 拖累的服务。低停顿不等于更高吞吐，要压测 CPU 和内存"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "染色指针解决了什么问题"},
+      {"id": "d2", "intent": "什么场景该从 G1 换到 ZGC"},
+      {"id": "d3", "intent": "分代 ZGC 相对非分代改进了什么"}
+    ],
+    "pitfalls": [
+      "把 ZGC 说成完全没有 STW",
+      "堆很小、CPU 很紧还强上 ZGC"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-jit",
+    "name": "解释器与 JIT",
+    "summary": "先解释执行再把热点编译成本地代码；分层编译 C1/C2，内联和逃逸分析都发生在编译之后。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "解释器启动快，热点方法由 JIT 编译进 Code Cache；混合模式是默认，-Xint 会让性能掉一截"},
+      {"id": "p2", "text": "分层编译：C1 快速编译带 profiling，C2 深度优化（内联、逃逸分析）；热度变化还可能去优化"},
+      {"id": "p3", "text": "压测前要预热，否则测的是解释执行；CodeCache 满了会停止编译，表现为突然变慢"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么 JVM 不全部提前编译"},
+      {"id": "d2", "intent": "C1 和 C2 各自解决什么"},
+      {"id": "d3", "intent": "线上突然变慢，怎么判断是不是 CodeCache 或去优化"}
+    ],
+    "pitfalls": [
+      "冷启动微基准当正式性能数据",
+      "把 JIT 和类加载混成一件事"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-gc-tuning",
+    "name": "GC 调优思路",
+    "summary": "先看日志和业务 SLA，再动年轻代、停顿目标和收集器；Xms=Xmx 避免运行期扩堆，调参要有对照。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "高频参数：-Xms/-Xmx 同值、-Xss、MetaspaceSize/MaxMetaspaceSize、MaxGCPauseMillis、HeapDumpOnOutOfMemoryError"},
+      {"id": "p2", "text": "Young GC 太勤：Eden 小或分配太猛；晋升太快：Survivor 不够或对象活得比预想长；Full GC：老年代容量或泄漏"},
+      {"id": "p3", "text": "先修代码和大对象、无界缓存，再换收集器；每次只改一两个参数，用同样流量对比停顿、吞吐和 CPU"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "给你一段 G1 日志，你先看哪几列"},
+      {"id": "d2", "intent": "把 MaxGCPauseMillis 从 200 改到 20 会有什么副作用"},
+      {"id": "d3", "intent": "容器里堆该占 limit 的多少"}
+    ],
+    "pitfalls": [
+      "没看日志就抄别人的 JVM 参数",
+      "堆顶满容器 limit，把元空间和线程栈挤去 swap"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-diag-tools",
+    "name": "JVM 排查工具",
+    "summary": "jstat 看 GC 趋势，jmap/jcmd 出 dump，jstack 看线程，MAT 找泄漏，Arthas 做线上动态观察。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "jstat -gcutil 看各区占比和 GC 次数；连续采样比看一次瞬时值有用"},
+      {"id": "p2", "text": "live dump 用 jcmd GC.heap_dump 或 jmap；MAT 看 Histogram、Dominator Tree、到 GC Root 的路径"},
+      {"id": "p3", "text": "jstack / jcmd Thread.print 抓线程栈；Arthas 的 dashboard、profiler、watch 适合临时定位，生产 dump 要评估 STW"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "不能重启的机器上你怎么拿堆栈和 dump"},
+      {"id": "d2", "intent": "MAT 里 shallow 和 retained 差在哪"},
+      {"id": "d3", "intent": "容器里 PID 1 和 jstat 连不上怎么办"}
+    ],
+    "pitfalls": [
+      "高峰时对大堆 jmap -dump:live 造成长时间 STW",
+      "只看 Histogram Top 不看 GC Root 路径"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-cpu-high",
+    "name": "CPU 飙高排查",
+    "summary": "先定位占用 CPU 的线程，再把 pCPU 对上 Java 栈；区分业务热点、GC 线程和死循环。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "top -Hp 找线程，把 PID 转十六进制，对 jstack 里的 nid；或用 async-profiler / Arthas profiler 直接出火焰图"},
+      {"id": "p2", "text": "栈在业务方法里就是热点或死循环；栈在 GC 线程（GC task、VM Thread）就要看 GC 日志，不是先改业务代码"},
+      {"id": "p3", "text": "JIT 编译线程短时间高 CPU 正常；持续满核要看是否 Full GC、哈希碰撞空转、正则回溯"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Walk 一遍从 top 到 jstack 的步骤"},
+      {"id": "d2", "intent": "GC 线程打满 CPU 时你下一步看什么"},
+      {"id": "d3", "intent": "火焰图上 CPU 都在 Interpreter 说明什么"}
+    ],
+    "pitfalls": [
+      "只看进程 CPU，不拆到线程",
+      "把 GC 线程高 CPU 当成业务死循环"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "jvm-native-memory",
+    "name": "堆外占用偏高",
+    "summary": "RSS 远大于 -Xmx 时看线程栈、元空间、直接内存、Code Cache、JNI/Netty，而不是继续加堆。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["java", "jvm"],
+    "key_points": [
+      {"id": "p1", "text": "进程内存 ≈ 堆 + 元空间 + 线程栈×线程数 + 直接内存 + Code Cache + GC 自身 + JNI"},
+      {"id": "p2", "text": "NMT（NativeMemoryTracking）能分项看；Netty/RocketMQ 等框架的堆外要看它们自己的监控"},
+      {"id": "p3", "text": "线程数爆炸、未限制 MaxDirectMemorySize、类加载器泄漏，都会让 RSS 涨而堆监控却正常"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "堆利用率 40%，RSS 已经把容器打满，你查哪"},
+      {"id": "d2", "intent": "NMT 的 summary 你最先看哪几行"},
+      {"id": "d3", "intent": "glibc 内存碎片或 THP 会不会也表现为 RSS 虚高"}
+    ],
+    "pitfalls": [
+      "看到 RSS 高就加大 -Xmx",
+      "以为 MaxDirectMemorySize 能管住所有 native 分配"
+    ],
+    "status": "published"
   }
 ]

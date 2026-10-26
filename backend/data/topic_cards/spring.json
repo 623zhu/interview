@@ -67,5 +67,695 @@
       "把 BeanPostProcessor 和 init-method 顺序记反"
     ],
     "status": "published"
+  },
+  {
+    "key": "spring-ioc",
+    "name": "IoC 与依赖注入",
+    "summary": "对象创建和依赖装配交给容器；DI 是实现 IoC 的手段，不是另一套框架。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "控制反转：谁创建对象、谁组装依赖从业务代码转到容器，调用方只声明需要什么"},
+      {"id": "p2", "text": "依赖注入有构造器、setter、字段三种；容器按 BeanDefinition 实例化再注入，不是 new 完自己找依赖"},
+      {"id": "p3", "text": "依赖倒置是设计原则（依赖抽象），IoC 是运行时把这个原则落地；两者常一起出现但不是同义词"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "没有 Spring 时你怎么自己做 IoC"},
+      {"id": "d2", "intent": "DI 和 IoC 是什么关系"},
+      {"id": "d3", "intent": "项目里哪些对象故意不交给容器管"}
+    ],
+    "pitfalls": [
+      "把 IoC 说成就是 @Autowired",
+      "业务代码里 new 本该是 Bean 的依赖，注解形同虚设"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-autowired-resource",
+    "name": "@Autowired 与 @Resource",
+    "summary": "Autowired 先按类型再按名；Resource 先按名再按类型。多实现时要显式指定。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "@Autowired 是 Spring 注解，默认 required=true，先 byType，多个候选再用参数名或 @Qualifier"},
+      {"id": "p2", "text": "@Resource 来自 JSR-250/Jakarta，字段注入先 byName，找不到再 byType；不支持标在构造器上"},
+      {"id": "p3", "text": "接口多个实现时不要赌变量名碰巧对上，Autowired 配 Qualifier，Resource 写 name"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "同类型两个 Bean，只写 @Autowired 会怎样"},
+      {"id": "d2", "intent": "@Primary 和 @Qualifier 谁优先"},
+      {"id": "d3", "intent": "构造器注入能用 @Resource 吗"}
+    ],
+    "pitfalls": [
+      "多个实现靠字段名碰运气",
+      "把 @Resource 的 name 和类名（含 Impl）搞混"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-constructor-inject",
+    "name": "构造器注入",
+    "summary": "必选依赖用构造器，字段可 final，单构造器不必写 @Autowired；也逼你看见循环依赖。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "构造器注入在对象创建时就把依赖备齐，字段可 final，单测直接 new，不必反射填字段"},
+      {"id": "p2", "text": "Spring 4.3 起只有一个构造器时可以不写 @Autowired；可选依赖用 ObjectProvider 或 setter，不要在构造器里写一堆可空参数"},
+      {"id": "p3", "text": "构造器循环启动即失败，这是优点不是缺点；字段注入会把环藏到运行期"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么官方更推荐构造器而不是字段注入"},
+      {"id": "d2", "intent": "依赖暂时可空时你怎么写"},
+      {"id": "d3", "intent": "Lombok @RequiredArgsConstructor 和 Spring 怎么配合"}
+    ],
+    "pitfalls": [
+      "所有依赖都字段 @Autowired，循环依赖到生产才爆",
+      "构造器里做 I/O 或调其他 Bean 的业务方法"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-bean-scope",
+    "name": "Bean 作用域",
+    "summary": "默认 singleton 是每个容器一份；还有 prototype、request、session。单例不等于 JVM 全局唯一。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "singleton：同一容器同一 Bean 定义只创建一次，启动时非 lazy 就会初始化"},
+      {"id": "p2", "text": "prototype：每次 getBean 或注入时新建；容器不管它的销毁，@PreDestroy 不会自动调"},
+      {"id": "p3", "text": "Web 下还有 request/session/application；要在单例里用它们，得再包一层代理，否则注入时只拿一次"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "两个 ApplicationContext 里同名 Bean 是不是同一个对象"},
+      {"id": "d2", "intent": "prototype 的 destroy 谁负责"},
+      {"id": "d3", "intent": "request 作用域 Bean 注入到单例 Service 要注意什么"}
+    ],
+    "pitfalls": [
+      "把 Spring 单例理解成整个 JVM 只有一个实例",
+      "prototype 当请求隔离用，却从单例字段里拿"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-singleton-threadsafe",
+    "name": "单例 Bean 与线程安全",
+    "summary": "容器保证单例，不保证线程安全；别在单例里放可变的请求状态。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "Controller/Service 默认单例，多请求共用一个实例，成员变量会被并发读写"},
+      {"id": "p2", "text": "无状态（依赖都是线程安全的组件）就可以单例；要存用户/请求数据放到方法局部、ThreadLocal 或 request 作用域"},
+      {"id": "p3", "text": "SimpleDateFormat、非并发 Map、可变计数器放字段上会串数据；用不可变对象、并发容器或每次方法内新建"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Service 里一个 HashMap 当缓存，多请求会怎样"},
+      {"id": "d2", "intent": "ThreadLocal 用在单例 Bean 里还要注意什么"},
+      {"id": "d3", "intent": "你们怎么避免在 Controller 里塞状态"}
+    ],
+    "pitfalls": [
+      "觉得 Spring 单例就自动线程安全",
+      "用实例字段累积本次请求的中间结果"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-prototype-inject",
+    "name": "单例注入 Prototype",
+    "summary": "注入时只取一次，后面一直用同一个 prototype 实例；要每次新建得用 ObjectFactory、Provider 或 @Lookup。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "单例创建时把依赖写进字段，prototype 也只被 get 一次，之后复用的是那一个对象"},
+      {"id": "p2", "text": "每次要新实例：注入 ObjectFactory<T>/ObjectProvider<T> 再 getObject，或 @Lookup 方法，或 ApplicationContext.getBean"},
+      {"id": "p3", "text": "scoped-proxy 让注入的是代理，每次方法调用才向容器要当前作用域对象，request 作用域常用这一招"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么 @Autowired PrototypeBean 每次请求不是新的"},
+      {"id": "d2", "intent": "@Lookup 和 ObjectFactory 差在哪"},
+      {"id": "d3", "intent": "prototype 里如果还有资源，谁来关"}
+    ],
+    "pitfalls": [
+      "把 prototype 当成请求级 Bean 却直接字段注入",
+      "循环里 getBean 当对象池用，又不销毁"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-beanfactory-context",
+    "name": "BeanFactory 与 ApplicationContext",
+    "summary": "BeanFactory 是基本 IoC；ApplicationContext 在其上加事件、环境、AOP 和默认饿汉初始化。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "BeanFactory 负责 getBean、作用域和生命周期回调；DefaultListableBeanFactory 是常见实现"},
+      {"id": "p2", "text": "ApplicationContext 继承 BeanFactory，还管 Environment、消息、事件广播、资源加载；Web 下还有 Servlet 上下文"},
+      {"id": "p3", "text": "纯 BeanFactory 默认懒创建；ApplicationContext 刷新时把非 lazy 单例都建好，启动慢一点、运行期错误提前暴露"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么生产几乎都用 ApplicationContext"},
+      {"id": "d2", "intent": "getBean 时找不到定义和找不到实例分别是什么错"},
+      {"id": "d3", "intent": "refresh 失败半截，容器还能用吗"}
+    ],
+    "pitfalls": [
+      "说 ApplicationContext 不是 BeanFactory",
+      "在业务代码到处 getBean，把容器当服务定位器"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-factorybean",
+    "name": "FactoryBean",
+    "summary": "容器里一类特殊 Bean：getBean(id) 拿到的是 getObject() 的产品，要工厂本身得加 &。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "FactoryBean 把复杂对象的创建藏进 getObject()，MyBatis 的 SqlSessionFactoryBean、Spring 的 ProxyFactoryBean 都是"},
+      {"id": "p2", "text": "getBean(\"foo\") 返回产品；getBean(\"&foo\") 返回 FactoryBean 自己；isSingleton 决定产品是否缓存"},
+      {"id": "p3", "text": "它和普通工厂方法、@Bean 方法都能创建对象，差别是它自己也是容器里的 Bean，能注入别的依赖再产出"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么 MyBatis 要用 FactoryBean 而不是直接 new SqlSessionFactory"},
+      {"id": "d2", "intent": "&beanName 这个写法从哪来的"},
+      {"id": "d3", "intent": "FactoryBean 抛异常时，容器报的是产品类型还是工厂类型"}
+    ],
+    "pitfalls": [
+      "把 FactoryBean 和 BeanFactory 当成同一个东西",
+      "注入时类型写成 FactoryBean 却期望拿到产品"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-bfpp-bpp",
+    "name": "BeanFactoryPostProcessor 与 BeanPostProcessor",
+    "summary": "前者改图纸（BeanDefinition），后者改成品（实例甚至换成代理）。时机完全不同。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "BeanFactoryPostProcessor 在实例化之前跑，ConfigurationClassPostProcessor 扫 @Configuration/@Component、解析自动配置"},
+      {"id": "p2", "text": "BeanPostProcessor 在每个 Bean 初始化前后介入；@Autowired 注入、AOP 代理都是 BPP 做的"},
+      {"id": "p3", "text": "BFPP 自己也是 Bean，但要尽早创建，不能依赖那些还没注册 BPP 的普通业务 Bean，否则顺序错乱"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "想改某个 Bean 的作用域该用哪一种"},
+      {"id": "d2", "intent": "AOP 代理发生在 BPP 的 before 还是 after"},
+      {"id": "d3", "intent": "自己写一个 BPP 要注意什么循环"}
+    ],
+    "pitfalls": [
+      "在 BFPP 里 getBean 业务对象，触发过早初始化",
+      "把两种 PostProcessor 记成同一阶段"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-component-bean",
+    "name": "@Component 与 @Bean",
+    "summary": "组件扫描声明类；@Bean 在配置类里声明方法。@Configuration 的 @Bean 会走 CGLIB 拦截，避免重复创建。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "@Component/@Service/@Repository/@Controller 给自己能改的类用，靠包扫描进容器"},
+      {"id": "p2", "text": "@Bean 给第三方类、需要定制构造的对象用，写在 @Configuration 里"},
+      {"id": "p3", "text": "Full 模式（@Configuration）同类 @Bean 互调走代理，返回同一个单例；Lite 模式（普通 @Component 上的 @Bean）互调就是普通方法调用，会 new 出第二份"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "引入一个没有注解的第三方类，怎么交给 Spring"},
+      {"id": "d2", "intent": "为什么 @Configuration 类会被 CGLIB 增强"},
+      {"id": "d3", "intent": "扫描范围没扫到启动类之外的包，Bean 为什么没了"}
+    ],
+    "pitfalls": [
+      "在普通类上堆 @Bean 还以为是单例工厂",
+      "启动类放错包，扫描不到任何组件"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-three-level-cache",
+    "name": "三级缓存",
+    "summary": "一级放成品，二级放已暴露的早期引用，三级放 ObjectFactory。三级是为了和 AOP 提前代理配合，不是解环的唯一数学解。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "singletonObjects 成品；earlySingletonObjects 早期引用；singletonFactories 存 ObjectFactory，getObject 时才决定返回原对象还是早期代理"},
+      {"id": "p2", "text": "只为解 setter 环，两级缓存也行；第三级是避免所有 Bean 都提前做代理，并保证 B 注入到的 A 和容器最终暴露的 A 是同一个（含代理）"},
+      {"id": "p3", "text": "Boot 2.6 起默认不允许循环依赖，要开 spring.main.allow-circular-references；能解开不等于设计合理"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么不用二级缓存把半成品直接放进去"},
+      {"id": "d2", "intent": "A 有事务代理时，B 注入的是原对象还是代理"},
+      {"id": "d3", "intent": "getEarlyBeanReference 在什么时机被调"}
+    ],
+    "pitfalls": [
+      "说没有三级缓存就一定解不了循环依赖",
+      "把二级缓存说成只存未代理的原对象"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-aop",
+    "name": "Spring AOP 原理",
+    "summary": "切面编成 Advisor，BPP 给匹配的 Bean 套代理；调用走拦截器链。自调用不进链。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "@Aspect 解析成 Advisor（切点+通知）；AnnotationAwareAspectJAutoProxyCreator 在初始化后给匹配 Bean 建代理"},
+      {"id": "p2", "text": "有接口传统默认 JDK 代理，Boot 2/3 的 AOP 自动配置默认 CGLIB；final 类/方法、private 方法切不到"},
+      {"id": "p3", "text": "事务、缓存、异步都是 AOP；this.xx() 不进代理，强制 CGLIB 也救不了自调用"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "一次带事务的方法调用，拦截器链怎么走"},
+      {"id": "d2", "intent": "Spring AOP 和 AspectJ 编译期织入差在哪"},
+      {"id": "d3", "intent": "循环依赖时代理为什么可能提前创建"}
+    ],
+    "pitfalls": [
+      "认为改成 CGLIB 自调用事务就生效",
+      "在目标类构造器里指望切面已经套上"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-aop-order",
+    "name": "AOP 通知顺序",
+    "summary": "Around 包住其他通知；多个切面用 @Order，数字越小越靠外。事务和自定义切面叠在一起时要会排。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "同一切面里：Around 进入 → Before → 方法 → AfterReturning/AfterThrowing → After（finally）→ Around 退出"},
+      {"id": "p2", "text": "多个 @Aspect 实现 Ordered 或标 @Order，值小的外层先入后出，像洋葱；Spring 事务切面默认最低优先级，一般在最外"},
+      {"id": "p3", "text": "After 无论成功失败都跑；AfterThrowing 只在异常时。自己写 Around 必须 proceed，否则目标方法不会执行"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "日志切面和事务切面谁先开启事务"},
+      {"id": "d2", "intent": "After 和 AfterReturning 都能拿到返回值吗"},
+      {"id": "d3", "intent": "两个切面 Order 相同会怎样"}
+    ],
+    "pitfalls": [
+      "Around 里忘记 proceed",
+      "自定义切面默认优先级把事务包在里面，异常被吃掉事务不回滚"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-tx-propagation",
+    "name": "事务传播行为",
+    "summary": "传播描述方法边界上怎么对待已有事务，不是数据库隔离级别。默认 REQUIRED。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "REQUIRED：有就加入、没有就新建，同成同败，这是默认"},
+      {"id": "p2", "text": "SUPPORTS 有就用没有就非事务；MANDATORY 必须已有事务否则抛错；NOT_SUPPORTED 挂起后非事务跑；NEVER 有事务就抛错"},
+      {"id": "p3", "text": "传播只在经过代理的调用上生效；this 调用再写 REQUIRES_NEW 也还是外层那条事务"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "七种传播你能说出常用三种的差异吗"},
+      {"id": "d2", "intent": "内层 REQUIRED 抛错被外层 catch，提交时会怎样"},
+      {"id": "d3", "intent": "项目里除了 REQUIRED 还用过别的吗，为什么"}
+    ],
+    "pitfalls": [
+      "把传播行为和隔离级别当成一回事",
+      "同类内部调用还指望切换传播"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-tx-requires-new",
+    "name": "REQUIRES_NEW 与 NESTED",
+    "summary": "前者挂起外层开独立物理事务；后者在同一事务里打保存点。内层提交能否躲开外层回滚，完全不同。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "REQUIRES_NEW 申请新连接开新事务，内层一提交外层再回滚也抹不掉；适合审计日志、必须留下的痕迹"},
+      {"id": "p2", "text": "NESTED 用 JDBC 保存点，内层失败可回到保存点，外层还能继续；外层最终回滚则内层一起没"},
+      {"id": "p3", "text": "REQUIRES_NEW 并发高时容易把连接池打满（外层占着连接等内层再拿一条）；NESTED 不是所有事务管理器都支持"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "失败日志必须落库、主业务要回滚，选哪个"},
+      {"id": "d2", "intent": "批量导入一条失败跳过、整批失败全撤，选哪个"},
+      {"id": "d3", "intent": "JPA/JTA 下 NESTED 还能用吗"}
+    ],
+    "pitfalls": [
+      "用 REQUIRES_NEW 打日志却在同类 this 调用",
+      "大量并发套 REQUIRES_NEW 把连接池耗尽"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-tx-isolation",
+    "name": "事务隔离与 readOnly",
+    "summary": "隔离级别跟数据库走，默认 DEFAULT；readOnly 是优化提示，不是写保护。加入已有事务时内层隔离通常改不了。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "Spring 枚举 DEFAULT/RU/RC/RR/SERIALIZABLE；DEFAULT 就是数据源或库的默认，MySQL InnoDB 常见是 RR"},
+      {"id": "p2", "text": "REQUIRED 加入外层事务时，内层写的 isolation、timeout 一般不生效，物理事务已经开了"},
+      {"id": "p3", "text": "readOnly=true 可能让 JDBC/Hibernate 走只读优化，不保证所有库都禁写，别拿它当权限"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么内层声明 READ_COMMITTED 实际还是 RR"},
+      {"id": "d2", "intent": "readOnly 的查询方法里误写了一条 update 会怎样"},
+      {"id": "d3", "intent": "隔离级别和 MVCC、间隙锁你怎么一起讲"}
+    ],
+    "pitfalls": [
+      "以为 Spring 会把所有库统一成某种隔离级别",
+      "用 readOnly 替代授权或拦截写接口"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-tx-unexpected-rollback",
+    "name": "UnexpectedRollbackException",
+    "summary": "内层 REQUIRED 已把共享事务标成 rollback-only，外层 catch 后正常返回再提交，就会吃到这个异常。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "同一物理事务里，内层运行时异常经过事务拦截器就会 setRollbackOnly，即使异常之后被外层接住"},
+      {"id": "p2", "text": "外层若自己 catch 目标方法里的异常且异常没出代理，拦截器看到正常返回会提交——这是事务失效；两种 catch 位置效果相反"},
+      {"id": "p3", "text": "内层允许失败就拆到 REQUIRES_NEW/NESTED 或让异常继续抛；不要既共享事务又吞掉异常还指望提交"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "catch 在目标方法内部和 catch 在调用方，事务分别怎样"},
+      {"id": "d2", "intent": "TransactionAspectSupport.setRollbackOnly 什么时候用"},
+      {"id": "d3", "intent": "线上出现 UnexpectedRollbackException 你怎么查调用链"}
+    ],
+    "pitfalls": [
+      "内层失败 catch 掉还以为外层可以部分提交",
+      "把这个异常当成数据库自己回滚的报错"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-tx-boundary",
+    "name": "事务边界",
+    "summary": "事务放在编排完整用例的 Service；不要包住远程调用、文件上传和超长循环。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "边界放 Service 而不是 Controller 或每个 DAO：同成同败的写操作在一个事务里，避免碎事务"},
+      {"id": "p2", "text": "事务持有连接和锁，远程 HTTP、MQ、OSS 放进去会把超时放大，对端成功本地仍可能回滚，两边也不原子"},
+      {"id": "p3", "text": "@Async 换线程，调方事务不会传过去；要提交后再干活用 @TransactionalEventListener(AFTER_COMMIT) 或本地消息表"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "下单后要调支付和发消息，事务怎么切"},
+      {"id": "d2", "intent": "大事务导致连接池打满，你怎么拆"},
+      {"id": "d3", "intent": "异步任务读到未提交数据怎么办"}
+    ],
+    "pitfalls": [
+      "整个接口包括调外部 HTTP 都套 @Transactional",
+      "在事务里跑很慢的报表循环"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-mvc-flow",
+    "name": "Spring MVC 请求流程",
+    "summary": "DispatcherServlet 找 HandlerMapping，用 HandlerAdapter 调 Controller，再处理返回值和异常。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "请求先过 Filter，进入 DispatcherServlet；HandlerMapping 按 URL/方法找到 HandlerExecutionChain（含拦截器）"},
+      {"id": "p2", "text": "HandlerAdapter 做参数解析、校验、调 Controller；@ResponseBody 走 HttpMessageConverter，不会再渲染页面"},
+      {"id": "p3", "text": "异常交给 HandlerExceptionResolver；JSON 响应体在 Adapter 阶段就可能写出，postHandle 改不了 body，要用 ResponseBodyAdvice"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "HandlerMapping 和 HandlerAdapter 各干什么"},
+      {"id": "d2", "intent": "@RestController 比 @Controller 多了什么"},
+      {"id": "d3", "intent": "前后端分离后视图解析还走吗"}
+    ],
+    "pitfalls": [
+      "把 MVC 流程说成 Filter 直接调 Controller",
+      "在 postHandle 里改 JSON 响应却看不到效果"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-filter-interceptor",
+    "name": "Filter 与 Interceptor",
+    "summary": "Filter 属于 Servlet 容器，拦截器属于 Spring MVC；能拿到的信息和执行位置不同。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "同步请求顺序：Filter 前 → DispatcherServlet → Interceptor preHandle → Controller → postHandle → afterCompletion → Filter 后"},
+      {"id": "p2", "text": "Filter 适合编码、包装 Request、鉴权链；拦截器能拿到 HandlerMethod，适合登录态、权限、接口耗时"},
+      {"id": "p3", "text": "preHandle 返回 false 中断后续；抛错通常不跑 postHandle，仍跑 afterCompletion。认证优先用 Spring Security 过滤器链"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "CORS 或 JWT 校验放 Filter 还是拦截器"},
+      {"id": "d2", "intent": "Boot 里 Filter 怎么注册才能注入 Spring Bean"},
+      {"id": "d3", "intent": "多个拦截器的 afterCompletion 按什么顺序"}
+    ],
+    "pitfalls": [
+      "说 Filter 一定注入不了 Spring Bean",
+      "拦截器里做应在 Security 链完成的认证"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-exception-handler",
+    "name": "统一异常处理",
+    "summary": "@ControllerAdvice + @ExceptionHandler 挂在 HandlerExceptionResolver 上；过滤器里抛的错它接不住。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "Controller 及之后抛的异常由 DispatcherServlet 找 HandlerExceptionResolver；@RestControllerAdvice 适合 REST 返回 JSON"},
+      {"id": "p2", "text": "本类 @ExceptionHandler 优先于全局；按异常类型匹配最具体的那个，别只写一个 Exception 把校验错误也盖掉"},
+      {"id": "p3", "text": "Filter、容器层、异步线程里的异常不走这套，要各自处理或转发到错误 Controller"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "参数校验失败 400 你怎么统一返回"},
+      {"id": "d2", "intent": "Filter 里抛的鉴权失败为什么 Advice 收不到"},
+      {"id": "d3", "intent": "业务异常和系统异常你们怎么分码"}
+    ],
+    "pitfalls": [
+      "在 Advice 里再抛未处理异常造成循环",
+      "以为所有线程的异常都能被 @ControllerAdvice 抓住"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-boot-vs-framework",
+    "name": "Spring 与 Spring Boot",
+    "summary": "Framework 提供 IoC/AOP/MVC；Boot 用自动配置、starter 和内嵌容器减少装配。Boot 不是另一套 Spring。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "Spring 是工具箱：容器、事务、MVC、数据访问；Spring MVC 是其中 Web 模块"},
+      {"id": "p2", "text": "Boot 约定大于配置：classpath 上有什么就自动配什么，starter 锁定版本，jar 内嵌 Tomcat/Jetty/Undertow"},
+      {"id": "p3", "text": "写 Boot 项目仍然在用 Spring MVC 和 IoC；面试追问「为什么能用」往往要回到自动配置和条件注解"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "没有 Boot 时一个 Web 项目要自己配什么"},
+      {"id": "d2", "intent": "内嵌容器和外置 Tomcat 部署差在哪"},
+      {"id": "d3", "intent": "为什么排除一个自动配置就能换实现"}
+    ],
+    "pitfalls": [
+      "说有了 Boot 就不用 Spring MVC",
+      "把 starter 当成框架本身而不是依赖聚合"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-boot-application",
+    "name": "@SpringBootApplication",
+    "summary": "它是配置类 + 自动配置 + 组件扫描三件套；扫描默认只覆盖启动类所在包。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "@SpringBootConfiguration（即 @Configuration）+ @EnableAutoConfiguration + @ComponentScan"},
+      {"id": "p2", "text": "扫描从启动类包向下；Bean 放在平行包会丢，要用 scanBasePackages 或搬包"},
+      {"id": "p3", "text": "exclude / excludeName 可关掉某项自动配置；主类本身也是一个配置类，可以在上面写 @Bean"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "启动类放在 com.example，mapper 在 com.other，为什么空指针"},
+      {"id": "d2", "intent": "@SpringBootConfiguration 和 @Configuration 有区别吗"},
+      {"id": "d3", "intent": "怎样只关掉 DataSource 自动配置"}
+    ],
+    "pitfalls": [
+      "把启动类放在最深的业务包下面",
+      "重复标 @ComponentScan 把默认扫描覆盖掉"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-boot-autoconfig",
+    "name": "自动配置原理",
+    "summary": "EnableAutoConfiguration 导入候选配置类，条件注解决定是否生效；用户自己的 Bean 通常靠 OnMissingBean 让自动配置退让。",
+    "difficulty": "hard",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "Boot 2.7 起推荐、3.x 只用 META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports；更早读 spring.factories"},
+      {"id": "p2", "text": "AutoConfigurationImportSelector 读名单、去重、exclude、按 before/after 排序，再当配置类解析"},
+      {"id": "p3", "text": "@ConditionalOnClass / OnMissingBean / OnProperty 控制是否注册；debug 看 ConditionEvaluationReport，不是扫依赖包里所有类"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么引入 spring-boot-starter-web 就有 DispatcherServlet"},
+      {"id": "d2", "intent": "自己定义 DataSource 之后默认的还会创建吗"},
+      {"id": "d3", "intent": "自动配置没生效，你怎么查条件评估"}
+    ],
+    "pitfalls": [
+      "说 Boot 3 还从 spring.factories 读 EnableAutoConfiguration",
+      "同名覆盖理解成自动配置的退让方式"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-boot-startup",
+    "name": "Spring Boot 启动流程",
+    "summary": "SpringApplication.run 准备 Environment、创建并 refresh 容器；Web 应用在 refresh 里启动内嵌服务器，然后跑 Runner。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "先推断应用类型、准备监听器和 Environment（配置、Profile、命令行）"},
+      {"id": "p2", "text": "创建 ApplicationContext 后 refresh：扫描、自动配置、实例化单例；Servlet Web 在 onRefresh 启动内嵌 Tomcat"},
+      {"id": "p3", "text": "刷新完成后发事件，执行 ApplicationRunner/CommandLineRunner，再对外就绪；启动失败看是配置、Bean 还是端口"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "内嵌 Tomcat 是在所有 Bean 创建完之后才启动吗"},
+      {"id": "d2", "intent": "ApplicationRunner 和 CommandLineRunner 差在哪"},
+      {"id": "d3", "intent": "启动卡在 refresh，你怎么看卡在哪个 Bean"}
+    ],
+    "pitfalls": [
+      "把 run() 理解成只是 new 了一个 Tomcat",
+      "在静态块里做初始化，早于容器和配置"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-conditional",
+    "name": "条件注解",
+    "summary": "自动配置和业务开关都靠 @Conditional；OnMissingBean 是用户配置覆盖默认的关键。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "OnClass：classpath 有该类才配，所以 starter 里可以 optional 依赖"},
+      {"id": "p2", "text": "OnMissingBean：容器还没有这个类型/名才创建，用户 @Bean 优先"},
+      {"id": "p3", "text": "OnProperty / OnWebApplication / OnBean 组合出环境差异；条件在注册 BeanDefinition 时评估，不是运行到方法才看"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么没引数据库驱动就不会去配 DataSource"},
+      {"id": "d2", "intent": "OnMissingBean 看类型还是看名字"},
+      {"id": "d3", "intent": "自己写一个 @Conditional 要扩展哪"}
+    ],
+    "pitfalls": [
+      "条件没满足还去注入那个 Bean，启动失败怪扫描",
+      "OnMissingBean 写在已经 getBean 之后的代码里指望补救"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-config-priority",
+    "name": "配置优先级",
+    "summary": "命令行高于环境变量，高于 Profile 文件，高于默认 application.yml；同 key 高优先级覆盖，不是合并集合语义。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "常见从高到低：命令行参数 → Java 系统属性 → OS 环境变量 → 外置/内置 application-{profile} → application.yml/properties"},
+      {"id": "p2", "text": "同时有 properties 和 yml 时同一来源里 properties 更先（Boot 2.4+ 用 Config Data，细节看版本），不要两套各写一半"},
+      {"id": "p3", "text": "spring.profiles.active 决定叠加哪份；同名 list 通常是覆盖不是追加，要改默认值得把整段写全"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "容器里用环境变量覆盖数据源，变量名怎么写"},
+      {"id": "d2", "intent": "local 和 prod 两个 yml 同时存在谁生效"},
+      {"id": "d3", "intent": "为什么改了 yml 里某一项 list，默认的别的项也没了"}
+    ],
+    "pitfalls": [
+      "application.yml 和 application.properties 混用同一 key",
+      "以为 Profile 文件会和默认 list 做并集合并"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-configuration-properties",
+    "name": "@Value 与 @ConfigurationProperties",
+    "summary": "零散项用 @Value；成组配置用 ConfigurationProperties，能校验、能绑嵌套对象和松散命名。",
+    "difficulty": "easy",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "@Value(\"${x.y}\") 取单值，支持默认值和 SpEL，不适合一大坨相关配置"},
+      {"id": "p2", "text": "@ConfigurationProperties(prefix) 绑定对象，my-url / myUrl / MY_URL 都能对上；配 @EnableConfigurationProperties 或 @ConfigurationPropertiesScan"},
+      {"id": "p3", "text": "加上 @Validated 能在启动时把配错的端口、空值报出来；改配置要考虑 @RefreshScope 或重启，Value 不会自己热更新"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "一组 Redis 超时、池大小你用哪种绑定"},
+      {"id": "d2", "intent": "松散绑定 kebab 和 camel 为什么都能中"},
+      {"id": "d3", "intent": "配置类不加 getter/setter 能绑上吗"}
+    ],
+    "pitfalls": [
+      "用一长串 @Value 复制同一前缀",
+      "以为改了 Nacos 上的值，普通 @Value 字段会立刻变"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-starter",
+    "name": "自定义 Starter",
+    "summary": "starter 聚合依赖，autoconfigure 模块放自动配置和条件；使用方加依赖就能用。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "惯例拆 autoconfigure（配置类、Properties、条件）和 starter（只引依赖）；小功能可以合成一个模块"},
+      {"id": "p2", "text": "Boot 3 在 META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports 列出自动配置类全名"},
+      {"id": "p3", "text": "用 OnClass/OnMissingBean 让使用方能覆盖；第三方依赖标 optional，避免把实现强行打进所有应用"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "Walk 一遍你写过的 starter 目录结构"},
+      {"id": "d2", "intent": "为什么自动配置类不要放在业务扫描包下乱扫"},
+      {"id": "d3", "intent": "使用方已经有同类型 Bean 时你的 starter 该怎么办"}
+    ],
+    "pitfalls": [
+      "把业务代码打进 starter 还用 ComponentScan 扫人家的包",
+      "Boot 3 项目仍只写 spring.factories 的 EnableAutoConfiguration"
+    ],
+    "status": "published"
+  },
+  {
+    "key": "spring-async",
+    "name": "@Async",
+    "summary": "也是代理，自调用无效；默认执行器无线程上限。异步方法拿不到调用方事务。",
+    "difficulty": "medium",
+    "role_tags": ["backend", "java"],
+    "skill_tags": ["spring"],
+    "key_points": [
+      {"id": "p1", "text": "要 @EnableAsync；方法须经代理调用，返回 void 或 Future/CompletableFuture，同类 this 调用还是同步"},
+      {"id": "p2", "text": "默认 SimpleAsyncTaskExecutor 每次 new 线程，高并发会打爆；应声明 ThreadPoolTaskExecutor 并在 @Async(\"beanName\") 指定"},
+      {"id": "p3", "text": "事务跟线程走，异步里是新事务或没事务，可能读不到调用方未提交的数据；提交后再跑用事务事件"}
+    ],
+    "probe_path": [
+      {"id": "d1", "intent": "为什么 @Async 方法看起来没异步"},
+      {"id": "d2", "intent": "异常丢到异步线程你怎么捕捉"},
+      {"id": "d3", "intent": "线程池队列满了拒绝策略怎么选"}
+    ],
+    "pitfalls": [
+      "不配线程池就在线上开 @Async",
+      "异步里读同一事务刚写入的行却查不到"
+    ],
+    "status": "published"
   }
 ]

@@ -235,7 +235,7 @@ class TurnEvaluation(BaseModel):
 - 该用户最近几场问过的卡降低权重（后做）。
 - 从符合条件的若干张里挑选，而不是每次都取最相似的一张。
 
-当前种子 142 张，按主题拆在 `backend/data/topic_cards/`（`mysql.json` 43 张、`redis.json` 32 张、`agent.json` 25 张、`python.json` 17 张、`rag.json` 10 张，其余为 java、jvm、spring、http、mq、distributed）。按标签过滤即可。需要把简历里自由写的技能名称匹配到卡片时，再加向量检索。导入脚本读取该目录下全部 JSON，按 `key` upsert，并用正文 SHA-256 写入 `content_hash`，供以后判断是否重新 embedding。
+当前种子 372 张，按主题拆在 `backend/data/topic_cards/`（`mysql.json` 70 张、`redis.json` 62 张、`java.json` 36 张、`jvm.json` 32 张、`spring.json` 33 张、`agent.json` 54 张、`python.json` 69 张、`rag.json` 10 张，其余为 http、mq、distributed）。按标签过滤即可。需要把简历里自由写的技能名称匹配到卡片时，再加向量检索。导入脚本读取该目录下全部 JSON，按 `key` upsert，并用正文 SHA-256 写入 `content_hash`，供以后判断是否重新 embedding。
 
 ## 数据
 

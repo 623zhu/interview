@@ -16,7 +16,15 @@
 
 - 新增用户表，用于保存注册账号。邮箱不可重复，密码只存哈希。
 - 新增简历表和上传、列表接口。登录后可上传 PDF / Word，服务端抽取文本并结构化。
-- 新增考点卡表和 Java 后端种子卡，供计划生成和评估使用。MySQL 面试笔记已整理为 43 张考点卡；Redis 面试笔记已整理为 32 张考点卡（含原有 4 张的更新）；Python 面试笔记已整理为 17 张考点卡；AI Agent 面试笔记已整理为 35 张考点卡（`agent.json` 25、`rag.json` 10）。复制、Cluster、哨兵等带 `distributed` 标签，可作为场景卡。
+- 新增考点卡表和 Java 后端种子卡，供计划生成和评估使用。MySQL 面试笔记已整理为 70 张考点卡；Redis 面试笔记已整理为 62 张考点卡（含原有 4 张的更新）；Java 面试笔记已整理为 36 张考点卡；JVM 面试笔记已整理为 32 张考点卡；Spring 面试笔记已整理为 33 张考点卡；Python 面试笔记已整理为 69 张考点卡；AI Agent 面试笔记已整理为 64 张考点卡（`agent.json` 54、`rag.json` 10）。复制、Cluster、哨兵等带 `distributed` 标签，可作为场景卡。
+- MySQL 考点卡从 43 张扩充到 70 张，补上索引失效、Read View、快照读/当前读、双 1、在线 DDL、分区、备份与 PITR、SKIP LOCKED 等网页高频考点。导入后执行 `python scripts/import_topic_cards.py`。
+- Redis 考点卡从 32 张扩充到 62 张，补上 Stream 消费组、Bitmap、SCAN/UNLINK、延迟队列、限流、AOF 重写与刷盘、fork/COW、Hash Tag、MOVED/ASK、Cache-Aside、逻辑过期、哨兵 SDOWN/ODOWN 等网页高频考点。导入后执行 `python scripts/import_topic_cards.py`。
+- Java 考点卡从 4 张扩充到 36 张，补上 HashMap 树化与扩容、ArrayList/LinkedList、ThreadLocal、AQS、CAS/ABA、JMM、锁升级、虚拟线程、CompletableFuture、DCL 单例等网页高频考点。导入后执行 `python scripts/import_topic_cards.py`。
+- JVM 考点卡从 2 张扩充到 32 张，补上运行时数据区、元空间、TLAB、逃逸分析、类加载与双亲委派、可达性、三色标记、CMS/G1/ZGC、安全点、卡表/RSet、JIT、CPU 飙高与堆外占用排查等网页高频考点。导入后执行 `python scripts/import_topic_cards.py`。
+- Spring 考点卡从 3 张扩充到 33 张，补上 IoC 注入、三级缓存、AOP 通知顺序、事务传播与 REQUIRES_NEW/NESTED、UnexpectedRollback、MVC 流程、Filter/Interceptor、Boot 自动配置与启动流程、条件注解、自定义 Starter、@Async 等网页高频考点。导入后执行 `python scripts/import_topic_cards.py`。
+- Agent 考点卡从 25 张扩充到 54 张，补上 LangChain/LangGraph/LangSmith 分工、State 与 Reducer、条件边与 Command、Checkpointer、一次 HTTP 跑完一张图、interrupt 恢复与幂等、Send/子图/Supervisor、流式与观测、Plan-and-Execute、LCEL、Agentic RAG、护栏与模型路由等网页高频考点。导入后执行 `python scripts/import_topic_cards.py`。
+- Python 考点卡从 17 张扩充到 47 张，补上 GIL 与是否仍需加锁、可变默认参数、传参模型、上下文管理器、asyncio 阻塞与 TaskGroup、WSGI/ASGI、FastAPI 分层与 def/async def/Depends、Pydantic v2、Django/Flask 选型与 ORM N+1、Celery 幂等、Gunicorn/Uvicorn worker 等网页高频考点。导入后执行 `python scripts/import_topic_cards.py`。
+- Python 考点卡从 47 张扩充到 69 张，补上描述符、元类与 `__init_subclass__`、dataclass、lru_cache 泄漏、导入与循环导入、ABC/Protocol、内存泄漏与弱引用、contextvars、asyncio 超时取消、SQLAlchemy Session、FastAPI lifespan、Flask 请求上下文、pytest、性能排查、Django 事务与行锁等网页高频考点。导入后执行 `python scripts/import_topic_cards.py`。
 - 新增面试场次表和轮次表。登录后可创建面试、提交回答。
 - 提交回答时一次 HTTP 跑完一张 `turn_graph`：评估、规则决定下一步、出下一问或报告。档案仍以 MySQL 为准，不用 LangGraph checkpointer。
 - `interview_sessions` 增加可空 `report` 列，供结束后存放总分和阶段分。
@@ -49,7 +57,7 @@
 ### Database / Deployment Notes
 
 - 数据库迁移：在 `backend/` 执行 `alembic upgrade head`。顺序为 `cc267a266b69`（`users`）、`54098f4c206e`（`resumes`）、`3f212b686956`（`interview_sessions`）、`a41683e0a265`（`topic_cards`）、`1ce649d360ab`（`interview_turns`）、`c4f8a21b9d07`（`interview_sessions.report`）。当前 head 为 `c4f8a21b9d07`。`c4f8a21b9d07` 给场次表增加可空 JSON 列 `report`，进行中为 `NULL`，正常结束时写入。
-- 种子数据：迁移完成后在 `backend/` 执行 `python scripts/import_topic_cards.py`，读取 `backend/data/topic_cards/*.json`，按 `key` upsert。当前 142 张（`mysql.json` 43、`redis.json` 32、`agent.json` 25、`python.json` 17、`rag.json` 10，其余按主题分文件）。跨文件 `key` 重复会导入失败。已有相同 `key` 且正文未变则跳过。
+- 种子数据：迁移完成后在 `backend/` 执行 `python scripts/import_topic_cards.py`，读取 `backend/data/topic_cards/*.json`，按 `key` upsert。当前 372 张（`mysql.json` 70、`redis.json` 62、`java.json` 36、`jvm.json` 32、`spring.json` 33、`agent.json` 54、`python.json` 69、`rag.json` 10，其余按主题分文件）。跨文件 `key` 重复会导入失败。已有相同 `key` 且正文未变则跳过。
 - 依赖：`backend/requirements.txt` 增加 `langgraph>=0.2.45`。进程启动时 `compile()` `turn_graph`，挂到 `app.state`。
 - 回滚：`alembic downgrade -1` 会删除当前 head 对应的表及其数据。
 - 配置变更：无。LangSmith 接入时再增加追踪相关环境变量。
