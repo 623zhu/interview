@@ -13,6 +13,7 @@ from app.graphs.turn_graph import (
     SessionConflictError,
     SessionNotFoundError,
     TurnPipelineError,
+    sse_token_queue,
 )
 from app.models.interview_sessions import InterviewSession
 from app.models.interview_turn import InterviewTurn
@@ -132,6 +133,7 @@ async def submit_turn_sse(
     queue: asyncio.Queue[tuple[str, dict[str, Any]] | None] = asyncio.Queue()
 
     async def run() -> None:
+        token = sse_token_queue.set(queue)
         try:
             final_state = await turn_graph.ainvoke(
                 {"session_id": session_id, "answer": answer},
@@ -154,6 +156,7 @@ async def submit_turn_sse(
         except Exception:
             await queue.put(("error", {"detail": "处理本轮回答失败"}))
         finally:
+            sse_token_queue.reset(token)
             await queue.put(None)
 
     task = asyncio.create_task(run())

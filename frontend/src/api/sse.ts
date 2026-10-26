@@ -1,6 +1,6 @@
 export async function readSseStream(
   response: Response,
-  onEvent: (event: string, data: unknown) => void,
+  onEvent: (event: string, data: unknown) => void | Promise<void>,
 ): Promise<void> {
   if (!response.body) {
     throw new Error('empty stream')
@@ -27,7 +27,7 @@ export async function readSseStream(
         }
       }
       if (dataLines.length) {
-        onEvent(event, JSON.parse(dataLines.join('\n')))
+        await onEvent(event, JSON.parse(dataLines.join('\n')))
       }
       separator = buffer.indexOf('\n\n')
     }

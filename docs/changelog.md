@@ -24,6 +24,11 @@
 - 进行中的场次可用 `PATCH /api/v1/interview-sessions/{id}` 标为 `abandoned` 中途结束。不生成报告，之后不能再作答。
 - 新增 `POST /api/v1/users/session/refresh`：用刷新令牌换发新的访问令牌和刷新令牌，旧刷新令牌立即失效。不需要 `Authorization`。
 
+### Fixed
+
+- 面试下一问改为按字打出，避免 SSE 被代理攒齐后整段弹出。
+- 结束后的对话记录不再把开场自我介绍套进每一问：前端消息编号按轮次递增；出题不再粘贴自我介绍原文。
+
 ### Changed
 
 - 模拟面试对话改为气泡界面。提交回答时 `POST /api/v1/interview-sessions/{id}/turns` 可带 `Accept: text/event-stream`，评估后流式返回下一问。不带该头时仍返回 JSON。第一问在创建成功后由前端打字机展示。刷新或继续已有场次不再重放打字机。

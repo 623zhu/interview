@@ -119,6 +119,7 @@ export async function submitInterviewTurnStream(
     method: 'POST',
     headers,
     body: JSON.stringify({ answer }),
+    cache: 'no-store',
     signal,
   })
   if (!response.ok) {

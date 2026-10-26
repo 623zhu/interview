@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 from typing import Any
 
@@ -59,8 +60,13 @@ ASK_PROMPT = """
 - 只做简短承接，不评价对错，不说出答案。
 - 不编造简历里没有的经历。
 - 不要把考点卡原文当题面念出来。
+- 不要复述或粘贴候选人的自我介绍、上一轮长段原话。只针对其中一个点追问。
 - 一到两句话，口语化。
 """
+
+sse_token_queue: contextvars.ContextVar[asyncio.Queue[tuple[str, dict[str, Any]] | None] | None] = (
+    contextvars.ContextVar("sse_token_queue", default=None)
+)
 
 CLOSING_QUESTION = "今天的面试先到这里，你有想问我的吗？"
 TEMPLATE_CHUNK_INTERVAL = 0.024
@@ -300,8 +306,12 @@ def report(state: TurnState) -> dict[str, Any]:
     return {"report": built.model_dump(), "question": None}
 
 
+def _token_queue(config: RunnableConfig) -> asyncio.Queue[tuple[str, dict[str, Any]] | None] | None:
+    return sse_token_queue.get() or _cfg(config).get("token_queue")
+
+
 async def _emit_sse(config: RunnableConfig, event: str, data: dict[str, Any]) -> None:
-    queue = _cfg(config).get("token_queue")
+    queue = _token_queue(config)
     if queue is None:
         return
     await queue.put((event, data))
@@ -331,8 +341,15 @@ def _normalize_question(raw: str) -> str:
     return text[:2048]
 
 
+def _clip_text(value: str | None, limit: int) -> str:
+    text = (value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "…"
+
+
 async def _emit_question_chunks(config: RunnableConfig, question: str) -> None:
-    if _cfg(config).get("token_queue") is None:
+    if _token_queue(config) is None:
         return
     await _emit_sse(config, "status", {"phase": "asking"})
     for index in range(0, len(question)):
@@ -397,24 +414,29 @@ async def ask(state: TurnState, config: RunnableConfig) -> dict[str, Any]:
         await _emit_question_chunks(config, CLOSING_QUESTION)
         return {"question": CLOSING_QUESTION, "current_card": card}
 
-    recent = [
-        {
-            "seq": item.get("seq"),
-            "question": item.get("question"),
-            "answer": item.get("answer"),
-            "action": item.get("action"),
-        }
-        for item in state.get("recent_turns") or []
-        if item.get("answer")
-    ]
+    recent: list[dict[str, Any]] = []
+    for item in state.get("recent_turns") or []:
+        if not item.get("answer"):
+            continue
+        seq = item.get("seq")
+        limit = 400 if seq == state["pending_seq"] else 60
+        recent.append(
+            {
+                "seq": seq,
+                "question": item.get("question"),
+                "answer": _clip_text(str(item.get("answer") or ""), limit),
+                "action": item.get("action"),
+            }
+        )
     recent.append(
         {
             "seq": state["pending_seq"],
             "question": state["pending_question"],
-            "answer": state["answer"],
+            "answer": _clip_text(state["answer"], 400),
             "action": "current",
         }
     )
+    recent = recent[-3:]
     project = _find_project(profile, stage.resume_anchor)
     payload = {
         "action": state["action"],
@@ -424,7 +446,7 @@ async def ask(state: TurnState, config: RunnableConfig) -> dict[str, Any]:
             "resume_anchor": stage.resume_anchor,
         },
         "evaluation": state.get("evaluation"),
-        "recent_turns": recent[-3:],
+        "recent_turns": recent,
         "resume_skills": profile.skills,
         "project": project.model_dump() if project is not None else None,
         "card": (

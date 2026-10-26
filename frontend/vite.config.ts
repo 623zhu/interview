@@ -24,11 +24,13 @@ export default defineConfig({
         proxyTimeout: 600000,
         rewrite: (path) => path.replace(/^\/api/, ''),
         configure(proxy) {
-          proxy.on('proxyRes', (proxyRes, _req, res) => {
+          proxy.on('proxyRes', (proxyRes) => {
             const contentType = String(proxyRes.headers['content-type'] || '')
             if (contentType.includes('text/event-stream')) {
-              res.setHeader('Cache-Control', 'no-cache')
-              res.setHeader('X-Accel-Buffering', 'no')
+              proxyRes.headers['cache-control'] = 'no-cache, no-transform'
+              proxyRes.headers['x-accel-buffering'] = 'no'
+              delete proxyRes.headers['content-length']
+              delete proxyRes.headers['content-encoding']
             }
           })
         },

@@ -54,6 +54,9 @@ const difficultyLabel: Record<string, string> = {
 
 let abortStream: AbortController | null = null
 let typewriterToken = 0
+let dripGen = 0
+let dripBuffer = ''
+let dripping = false
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -93,6 +96,81 @@ function messagesFromSession(detail: InterviewSessionDetail): ChatMessage[] {
     })
   }
   return items
+}
+
+function nextUserSeq() {
+  return messages.value.filter((item) => item.role === 'user').length + 1
+}
+
+function liveMessage() {
+  return messages.value.find((item) => item.id === 'live')
+}
+
+function ensureLiveMessage() {
+  if (!liveMessage()) {
+    messages.value.push({
+      id: 'live',
+      role: 'interviewer',
+      text: '',
+      streaming: true,
+    })
+  }
+}
+
+function enqueueDrip(text: string, gen: number) {
+  if (!text || gen !== dripGen) return
+  thinking.value = false
+  dripBuffer += text
+  ensureLiveMessage()
+  if (!dripping) {
+    dripping = true
+    void runDrip(gen)
+  }
+}
+
+async function runDrip(gen: number) {
+  try {
+    while (dripBuffer.length && gen === dripGen) {
+      const chunk = dripBuffer.slice(0, 1)
+      dripBuffer = dripBuffer.slice(1)
+      const live = liveMessage()
+      if (live) {
+        live.text += chunk
+      }
+      await scrollToBottom()
+      await sleep(18)
+    }
+  } finally {
+    if (gen === dripGen) {
+      dripping = false
+      if (dripBuffer.length) {
+        dripping = true
+        void runDrip(gen)
+      }
+    }
+  }
+}
+
+async function finishDrip(gen: number, finalText?: string | null) {
+  const live = liveMessage()
+  if (finalText) {
+    const current = live?.text ?? ''
+    if (!current) {
+      enqueueDrip(finalText, gen)
+    } else if (finalText.startsWith(current) && finalText.length > current.length) {
+      enqueueDrip(finalText.slice(current.length), gen)
+    }
+  }
+  while (gen === dripGen && (dripping || dripBuffer.length)) {
+    await sleep(16)
+  }
+  const done = liveMessage()
+  if (done && gen === dripGen) {
+    if (finalText) {
+      done.text = finalText
+    }
+    done.streaming = false
+  }
 }
 
 async function playTypewriter(full: string) {
@@ -163,12 +241,9 @@ function applyDone(result: InterviewTurnSubmitResponse) {
     current_question: result.current_turn?.question ?? null,
     report: result.report,
   }
-  const live = messages.value.find((item) => item.id === 'live')
+  const live = liveMessage()
   if (live) {
     live.id = result.current_turn ? `q-${result.current_turn.seq}` : live.id
-    if (result.current_turn?.question) {
-      live.text = result.current_turn.question
-    }
     live.streaming = false
   }
 }
@@ -177,7 +252,7 @@ async function onSubmit() {
   const text = answer.value.trim()
   if (!text || !session.value || submitting.value) return
 
-  const seq = (session.value.turns.at(-1)?.seq ?? 0) + 1
+  const seq = nextUserSeq()
   messages.value.push({
     id: `a-${seq}`,
     role: 'user',
@@ -186,46 +261,36 @@ async function onSubmit() {
   answer.value = ''
   submitting.value = true
   thinking.value = true
+  dripGen += 1
+  const gen = dripGen
+  dripBuffer = ''
+  dripping = false
   await scrollToBottom()
 
   abortStream?.abort()
   abortStream = new AbortController()
-  let sawDelta = false
   let completed = false
 
   try {
     await submitInterviewTurnStream(
       sessionId.value,
       text,
-      (event, data) => {
+      async (event, data) => {
         if (event === 'status') {
           thinking.value = true
           return
         }
         if (event === 'delta') {
           const piece = typeof data === 'object' && data && 'text' in data ? String((data as { text: string }).text) : ''
-          if (!piece) return
-          thinking.value = false
-          if (!sawDelta) {
-            messages.value.push({
-              id: 'live',
-              role: 'interviewer',
-              text: '',
-              streaming: true,
-            })
-            sawDelta = true
-          }
-          const live = messages.value.find((item) => item.id === 'live')
-          if (live) {
-            live.text += piece
-          }
-          void scrollToBottom()
+          enqueueDrip(piece, gen)
           return
         }
         if (event === 'done') {
           thinking.value = false
-          applyDone(data as InterviewTurnSubmitResponse)
-          completed = (data as InterviewTurnSubmitResponse).status === 'completed'
+          const result = data as InterviewTurnSubmitResponse
+          await finishDrip(gen, result.current_turn?.question)
+          applyDone(result)
+          completed = result.status === 'completed'
           return
         }
         if (event === 'error') {
@@ -289,6 +354,7 @@ async function onAbandon() {
 onMounted(loadSession)
 onUnmounted(() => {
   typewriterToken += 1
+  dripGen += 1
   abortStream?.abort()
 })
 </script>
