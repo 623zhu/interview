@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules, UploadRequestOptions } from 'element-plus'
 import { listResumes, uploadResume, type ResumeListItem } from '@/api/resume'
@@ -17,6 +17,7 @@ import { ApiError } from '@/api/http'
 import AppHeader from '@/components/AppHeader.vue'
 import { formatDate } from '@/utils/datetime'
 
+const route = useRoute()
 const router = useRouter()
 const formRef = ref<FormInstance>()
 const loading = ref(false)
@@ -25,9 +26,14 @@ const starting = ref(false)
 const resumes = ref<ResumeListItem[]>([])
 const activeSession = ref<InterviewSessionListItem | null>(null)
 
+function roleFromQuery(): TargetRole {
+  const role = route.query.role
+  return TARGET_ROLES.find((item) => item === role) ?? 'Java 后端'
+}
+
 const form = reactive({
   resumeId: null as number | null,
-  targetRole: 'Java 后端' as TargetRole,
+  targetRole: roleFromQuery(),
   difficulty: 'medium' as Difficulty,
 })
 

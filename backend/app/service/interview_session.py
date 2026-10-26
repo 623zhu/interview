@@ -736,21 +736,25 @@ async def list_interview_sessions_service(
             session_id: question for session_id, question in pending_result.all()
         }
 
-    return [
-        InterviewSessionListItem(
-            id=row.id,
-            resume_id=row.resume_id,
-            target_role=row.target_role,
-            difficulty=row.difficulty,
-            status=row.status,
-            created_at=row.created_at,
-            score=_score_from_report(row.report),
-            current_question=(
-                pending_by_session.get(row.id) if row.status == "in_progress" else None
-            ),
+    items: list[InterviewSessionListItem] = []
+    for row in rows:
+        report = _load_stored_report(row.report)
+        items.append(
+            InterviewSessionListItem(
+                id=row.id,
+                resume_id=row.resume_id,
+                target_role=row.target_role,
+                difficulty=row.difficulty,
+                status=row.status,
+                created_at=row.created_at,
+                score=report.score if report else None,
+                stages=report.stages if report else [],
+                current_question=(
+                    pending_by_session.get(row.id) if row.status == "in_progress" else None
+                ),
+            )
         )
-        for row in rows
-    ]
+    return items
 
 
 async def abandon_interview_session_service(

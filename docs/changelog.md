@@ -34,6 +34,9 @@
 
 ### Changed
 
+- 浏览器标签从脚手架默认的 `Vite App` 改为各页面标题加「智面」。
+- 工作台改版：首屏可直接选岗位开始面试；「本周表现」按项目深挖、基础、场景显示本周已完成场次的平均分，并给出最弱一项的建议；底部为本周练习、累计面试、近 30 天能力提升和最高得分。
+- `GET /api/v1/interview-sessions` 每项增加 `stages`（各计分阶段的分数），来自已写入的 `report`。新增字段，不影响现有调用方。
 - 模拟面试对话改为气泡界面。提交回答时 `POST /api/v1/interview-sessions/{id}/turns` 可带 `Accept: text/event-stream`，评估后流式返回下一问。不带该头时仍返回 JSON。第一问在创建成功后由前端打字机展示。刷新或继续已有场次不再重放打字机。
 - 创建面试场次的 `target_role` 改为固定取值：`Java 后端` / `Python 后端` / `AI Agent`。不再接受自由文本，不合法返回 `422`。不需要数据库迁移；历史场次仍按原文展示。
 - 考点卡种子按主题拆到 `backend/data/topic_cards/`，不再使用单一的 `topic_cards.json`。导入脚本读取该目录下全部 JSON。岗位含 Python 时会打上 `python` 标签；含 Agent / LLM / 大模型 / AI 工程师时会打上 `ai`。简历技能里的 Python / Python3 归一到 `python`，LangChain / LangGraph / LLM 等归一到 `agent`，RAG / MCP 各归一到对应标签。

@@ -323,6 +323,7 @@ Authorization: Bearer <access_token>
     "status": "in_progress",
     "created_at": "2026-10-23T08:00:00Z",
     "score": null,
+    "stages": [],
     "current_question": "你刚才提到订单系统用了 Redis，缓存和数据库不一致怎么处理？"
   },
   {
@@ -333,12 +334,17 @@ Authorization: Bearer <access_token>
     "status": "completed",
     "created_at": "2026-10-20T08:00:00Z",
     "score": 72,
+    "stages": [
+      { "kind": "project_probe", "score": 70 },
+      { "kind": "fundamentals", "score": 78 },
+      { "kind": "scenario", "score": 68 }
+    ],
     "current_question": null
   }
 ]
 ```
 
-`score` 来自场次上已写入的 `report.score`。尚未结束、已放弃、或旧数据尚未补写时为 `null`。打开详情 GET 会给旧的已完成场次补写 `report`。`current_question` 仅 `in_progress` 有值。`status` 取值不合法返回 `422`。
+`score` 和 `stages` 来自场次上已写入的 `report`。`stages` 只含 `project_probe`（项目深挖）、`fundamentals`（基础）、`scenario`（场景）中实际考到的阶段，没有报告时为空数组。尚未结束、已放弃、或旧数据尚未补写时为 `null`。打开详情 GET 会给旧的已完成场次补写 `report`。`current_question` 仅 `in_progress` 有值。`status` 取值不合法返回 `422`。
 
 ## 查询面试场次
 

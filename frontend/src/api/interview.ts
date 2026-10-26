@@ -10,6 +10,13 @@ export type SessionStatus = 'planned' | 'in_progress' | 'completed' | 'abandoned
 
 export const TARGET_ROLES: TargetRole[] = ['Java 后端', 'Python 后端', 'AI Agent']
 
+export type ScoredStageKind = 'project_probe' | 'fundamentals' | 'scenario'
+
+export interface StageScore {
+  kind: string
+  score: number
+}
+
 export interface InterviewSessionListItem {
   id: number
   resume_id: number
@@ -18,6 +25,7 @@ export interface InterviewSessionListItem {
   status: string
   created_at: string
   score: number | null
+  stages: StageScore[]
   current_question: string | null
 }
 
@@ -47,7 +55,7 @@ export interface InterviewTurnPublic {
 
 export interface InterviewReport {
   score: number
-  stages: { kind: string; score: number }[]
+  stages: StageScore[]
   covered: string[]
   missing: string[]
   said_dont_know_count: number

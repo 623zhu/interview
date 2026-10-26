@@ -12,13 +12,13 @@ const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
     { path: '/', redirect: '/login' },
-    { path: '/login', component: LoginView, meta: { guest: true } },
-    { path: '/home', component: HomeView, meta: { requiresAuth: true } },
-    { path: '/interview', component: InterviewView, meta: { requiresAuth: true } },
-    { path: '/interview/:id', component: InterviewSessionView, meta: { requiresAuth: true } },
-    { path: '/records', component: RecordsView, meta: { requiresAuth: true } },
-    { path: '/signup', component: SignUpView, meta: { guest: true } },
-    { path: '/reset-password', component: ResetPasswordView, meta: { guest: true } },
+    { path: '/login', component: LoginView, meta: { guest: true, title: '登录' } },
+    { path: '/home', component: HomeView, meta: { requiresAuth: true, title: '面试工作台' } },
+    { path: '/interview', component: InterviewView, meta: { requiresAuth: true, title: '模拟面试' } },
+    { path: '/interview/:id', component: InterviewSessionView, meta: { requiresAuth: true, title: '面试中' } },
+    { path: '/records', component: RecordsView, meta: { requiresAuth: true, title: '面试记录' } },
+    { path: '/signup', component: SignUpView, meta: { guest: true, title: '注册' } },
+    { path: '/reset-password', component: ResetPasswordView, meta: { guest: true, title: '重置密码' } },
   ],
 })
 
@@ -30,6 +30,11 @@ router.beforeEach((to) => {
   if (to.meta.guest && auth.accessToken) {
     return '/home'
   }
+})
+
+router.afterEach((to) => {
+  const page = typeof to.meta.title === 'string' ? to.meta.title : ''
+  document.title = page ? `${page} · 智面` : '智面'
 })
 
 export default router

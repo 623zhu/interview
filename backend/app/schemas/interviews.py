@@ -119,6 +119,7 @@ class InterviewSessionListItem(BaseModel):
     status: str
     created_at: UtcDateTime
     score: int | None = None
+    stages: list[StageScore] = Field(default_factory=list)
     current_question: str | None = None
 
 
