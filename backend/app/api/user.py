@@ -1,4 +1,5 @@
 from fastapi import APIRouter,status,Request,HTTPException
+from app.core.logging import get_logger
 from app.schemas.user import (
     UserCreateRequest,UserCreateResponse,
     UserVerifyEmailRequest,UserLoginRequest,UserLoginResponse,
@@ -16,6 +17,7 @@ from app.service.user import (
 )
 
 router = APIRouter(prefix="/api/v1/users",tags=["users"])
+logger = get_logger()
 
 @router.post(
     "",
@@ -52,8 +54,12 @@ async def create_user_verify_email(body:UserVerifyEmailRequest,request:Request):
             request.app.state.redis_client,
         )
         return {}
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,detail=str(e))
+    except Exception:
+        logger.exception("send verification code failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="发送验证码失败",
+        )
 
 
 @router.post(

@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.logging import get_logger
 from app.graphs.state import TurnState
 from app.models.interview_sessions import InterviewSession
 from app.models.interview_turn import InterviewTurn
@@ -26,6 +27,7 @@ from app.schemas.resumes import ProjectItem, ResumeProfile
 from app.service.interview_decide import decide_next_action
 from app.service.interview_score import build_interview_report, gate_evaluation
 
+logger = get_logger()
 EVALUATE_RETRY = 1
 ASK_RETRY = 1
 
@@ -255,7 +257,8 @@ async def evaluate(state: TurnState, config: RunnableConfig) -> dict[str, Any]:
         "key_points": _rubric(stage, profile, state.get("current_card")),
     }
     last_error: Exception | None = None
-    for _ in range(EVALUATE_RETRY + 1):
+    session_id = state["session_id"]
+    for attempt in range(EVALUATE_RETRY + 1):
         try:
             completion = await llm_client.chat.completions.create(
                 model=settings.llm_model_light,
@@ -272,6 +275,12 @@ async def evaluate(state: TurnState, config: RunnableConfig) -> dict[str, Any]:
             return {"evaluation": evaluation.model_dump()}
         except Exception as exc:
             last_error = exc
+            logger.warning(
+                "evaluate retry session_id=%s attempt=%s error=%s",
+                session_id,
+                attempt + 1,
+                exc,
+            )
     raise TurnPipelineError(str(last_error) if last_error else "evaluation failed")
 
 
@@ -384,9 +393,10 @@ async def _stream_llm_question(
     llm_client: AsyncOpenAI,
     payload: dict[str, Any],
     config: RunnableConfig,
+    session_id: int,
 ) -> str:
     last_error: Exception | None = None
-    for _ in range(ASK_RETRY + 1):
+    for attempt in range(ASK_RETRY + 1):
         sent_any = False
         collected: list[str] = []
         try:
@@ -414,6 +424,12 @@ async def _stream_llm_question(
             return question
         except Exception as exc:
             last_error = exc
+            logger.warning(
+                "ask retry session_id=%s attempt=%s error=%s",
+                session_id,
+                attempt + 1,
+                exc,
+            )
             if sent_any:
                 break
     raise TurnPipelineError(str(last_error) if last_error else "ask failed")
@@ -484,7 +500,9 @@ async def ask(state: TurnState, config: RunnableConfig) -> dict[str, Any]:
             else None
         ),
     }
-    question = await _stream_llm_question(llm_client, payload, config)
+    question = await _stream_llm_question(
+        llm_client, payload, config, state["session_id"]
+    )
     return {"question": question, "current_card": card}
 
 # 本轮回答和评估写回数据库

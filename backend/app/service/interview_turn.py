@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -9,6 +10,7 @@ from openai import AsyncOpenAI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.logging import get_logger
 from app.graphs.turn_graph import (
     SessionConflictError,
     SessionNotFoundError,
@@ -23,9 +25,30 @@ from app.schemas.interviews import (
     InterviewTurnSubmitResponse,
 )
 
+logger = get_logger()
+
 
 def format_sse(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _log_turn_done(session_id: int, final_state: dict[str, Any], duration_ms: int) -> None:
+    evaluation = final_state.get("evaluation") or {}
+    progress = final_state.get("next_progress") or final_state.get("progress") or {}
+    stage_index = progress.get("stage_index")
+    stages = (final_state.get("plan") or {}).get("stages") or []
+    stage_kind = None
+    if isinstance(stage_index, int) and 0 <= stage_index < len(stages):
+        stage_kind = stages[stage_index].get("kind")
+    logger.info(
+        "turn done session_id=%s seq=%s action=%s stage=%s score=%s duration_ms=%s",
+        session_id,
+        final_state.get("pending_seq"),
+        final_state.get("action"),
+        stage_kind or stage_index,
+        evaluation.get("score"),
+        duration_ms,
+    )
 
 
 def _submit_response(session_id: int, final_state: dict[str, Any]) -> InterviewTurnSubmitResponse:
@@ -109,6 +132,7 @@ async def submit_turn_service(
     llm_client: AsyncOpenAI,
     turn_graph,
 ) -> InterviewTurnSubmitResponse:
+    started = time.perf_counter()
     final_state = await turn_graph.ainvoke(
         {"session_id": session_id, "answer": answer},
         config=_graph_config(
@@ -118,6 +142,7 @@ async def submit_turn_service(
             session_id=session_id,
         ),
     )
+    _log_turn_done(session_id, final_state, int((time.perf_counter() - started) * 1000))
     return _submit_response(session_id, final_state)
 
 
@@ -134,6 +159,7 @@ async def submit_turn_sse(
 
     async def run() -> None:
         token = sse_token_queue.set(queue)
+        started = time.perf_counter()
         try:
             final_state = await turn_graph.ainvoke(
                 {"session_id": session_id, "answer": answer},
@@ -145,15 +171,22 @@ async def submit_turn_sse(
                     token_queue=queue,
                 ),
             )
+            _log_turn_done(
+                session_id, final_state, int((time.perf_counter() - started) * 1000)
+            )
             payload = _submit_response(session_id, final_state).model_dump(mode="json")
             await queue.put(("done", payload))
         except SessionNotFoundError:
+            logger.warning("turn session not found session_id=%s", session_id)
             await queue.put(("error", {"detail": "面试场次不存在"}))
         except SessionConflictError:
+            logger.warning("turn conflict session_id=%s", session_id)
             await queue.put(("error", {"detail": "当前场次无法作答"}))
         except TurnPipelineError:
+            logger.exception("turn pipeline failed session_id=%s", session_id)
             await queue.put(("error", {"detail": "处理本轮回答失败"}))
         except Exception:
+            logger.exception("turn failed session_id=%s", session_id)
             await queue.put(("error", {"detail": "处理本轮回答失败"}))
         finally:
             sse_token_queue.reset(token)

@@ -24,6 +24,7 @@
 - 进行中的场次可用 `PATCH /api/v1/interview-sessions/{id}` 标为 `abandoned` 中途结束。不生成报告，之后不能再作答。
 - 新增 `POST /api/v1/users/session/refresh`：用刷新令牌换发新的访问令牌和刷新令牌，旧刷新令牌立即失效。不需要 `Authorization`。
 - 面试记录页接入 `GET /api/v1/interview-sessions`。可按状态筛选，点进详情看问答和报告；进行中的场次可继续作答。
+- 后端启动后向标准输出写面试处理日志：创建场次、每轮结果、评估/出题重试，以及计划生成、简历解析、提交回答和发送验证码失败。不含回答原文和简历正文。
 
 ### Fixed
 
@@ -43,6 +44,7 @@
 - 选卡不再按本场难度盖帽。简单场以 easy 为主并掺 medium；中等场 medium 为主并掺少量 easy/hard；困难场提高 hard 占比。某档不够用相邻难度补。策划挑出的三张卡会按同样规则校验。
 - 接口成功时直接返回资源，不再使用 `code`、`message`、`data` 外壳。
 - 每轮评估增加模型给出的分数和点评。代码按深度、跑题、「不会」钳制分数后写入；结束时按项目深挖、基础、场景加权得到总分，并写入 `interview_sessions.report`。进行中不返回点评；结束后 `GET /api/v1/interview-sessions/{id}` 优先读该列，旧场次现算后补写。
+- 发送注册验证码失败时返回固定文案 `发送验证码失败`，不再把内部错误原文回给客户端。
 
 ### Database / Deployment Notes
 

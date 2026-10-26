@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.logging import get_logger
 from app.models.interview_sessions import InterviewSession
 from app.models.interview_turn import InterviewTurn   
 from app.models.resumes import Resume
@@ -32,6 +33,7 @@ from app.schemas.interviews import (
 from app.schemas.resumes import ResumeProfile
 from app.service.interview_score import build_interview_report, gate_evaluation
 
+logger = get_logger()
 MAX_CANDIDATE_CARDS = 12
 PLAN_RETRY = 1
 INTRO_QUESTION = "先做个一分钟自我介绍吧，可以结合你最近的项目。"
@@ -481,7 +483,7 @@ async def generate_plan(
         GENERATE_PLAN_PROMPT + "\n" + _plan_mix_instructions(difficulty, candidate_cards)
     )
     last_error: Exception | None = None
-    for _ in range(PLAN_RETRY + 1):
+    for attempt in range(PLAN_RETRY + 1):
         try:
             completion = await llm_client.chat.completions.create(
                 model=settings.llm_model_heavy,
@@ -501,6 +503,7 @@ async def generate_plan(
             return _build_plan(middle, candidate_cards, allowed_anchors, difficulty)
         except Exception as exc:
             last_error = exc
+            logger.warning("plan retry attempt=%s error=%s", attempt + 1, exc)
     raise PlanGenerationError(str(last_error) if last_error else "plan generation failed")
 
 # 生成第一个问题
@@ -594,7 +597,7 @@ async def create_interview_session_service(
         candidate_cards,
     )
     question = ask_first_question()
-    return await persist_session(
+    response = await persist_session(
         db,
         user_id,
         resume,
@@ -604,6 +607,14 @@ async def create_interview_session_service(
         plan,
         question,
     )
+    logger.info(
+        "session created session_id=%s resume_id=%s role=%s difficulty=%s",
+        response.id,
+        response.resume_id,
+        response.target_role,
+        response.difficulty,
+    )
+    return response
 
 
 # 汇总各轮评估为报告

@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 
 from app.api.deps import CurrentUser
+from app.core.logging import get_logger
 from app.graphs.turn_graph import (
     SessionConflictError as TurnSessionConflictError,
     SessionNotFoundError as TurnSessionNotFoundError,
@@ -37,6 +38,7 @@ from app.service.interview_turn import (
 )
 
 router = APIRouter(prefix="/api/v1/interview-sessions", tags=["interview-sessions"])
+logger = get_logger()
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, summary="创建面试场次")
@@ -60,6 +62,11 @@ async def create_interview_session(
         except ResumeNotReadyError:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="简历未就绪")
         except PlanGenerationError:
+            logger.exception(
+                "plan failed user_id=%s resume_id=%s",
+                current_user.id,
+                body.resume_id,
+            )
             raise HTTPException(
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="生成面试计划失败",
@@ -152,6 +159,7 @@ async def submit_interview_turn(
         except TurnSessionConflictError:
             raise HTTPException(status.HTTP_409_CONFLICT, detail="当前场次无法作答")
         except TurnPipelineError:
+            logger.exception("turn pipeline failed session_id=%s", session_id)
             raise HTTPException(
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="处理本轮回答失败",

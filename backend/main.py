@@ -11,9 +11,11 @@ from app.api.resumes import router as resumes_router
 from app.api.interview_sessions import router as interview_sessions_router
 
 from app.graphs.turn_graph import build_turn_graph
+from app.core.logging import setup_logging
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    setup_logging()
     mysql_engine = create_engine(settings)
     app.state.mysql_session_factory = create_mysql_session_factory(mysql_engine)
     app.state.redis_client = create_redis_client(settings)

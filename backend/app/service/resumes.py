@@ -7,10 +7,13 @@ from pypdf import PdfReader
 from docx import Document
 
 from app.core.config import settings
+from app.core.logging import get_logger
 from app.models.resumes import Resume
 from sqlalchemy import select
 from openai import AsyncOpenAI
 from app.schemas.resumes import ResumeProfile
+
+logger = get_logger()
 MAX_FILE_BYTES=10*1024*1024
 MAX_TEXT_CHARS=20_000
 
@@ -79,6 +82,7 @@ async def upload_resume_service(
     try:
         text = extract_text(content,suffix).strip()
     except Exception:
+        logger.exception("resume extract failed resume_id=%s", resume.id)
         resume.status = "failed"
         resume.error_detail = "无法解析该文件"
         await session.commit()
@@ -101,6 +105,7 @@ async def upload_resume_service(
     try:
         profile = await extract_profile_service(text,llm_client,settings.llm_model_light)
     except Exception:
+        logger.exception("resume profile failed resume_id=%s", resume.id)
         resume.error_detail = "结构化失败"
         await session.commit()
         return resume

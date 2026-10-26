@@ -77,7 +77,7 @@ Authorization: Bearer <access_token>
 }
 ```
 
-成功返回 `201`，响应体为空对象。验证码写入 Redis `register:code:{email}`，5 分钟过期，不在响应中返回。邮件发送失败返回 `500`。
+成功返回 `201`，响应体为空对象。验证码写入 Redis `register:code:{email}`，5 分钟过期，不在响应中返回。邮件发送失败返回 `500`，响应体 `{"detail": "发送验证码失败"}`。
 
 ## 注册用户
 
