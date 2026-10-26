@@ -1,6 +1,6 @@
-from datetime import datetime
-
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.utc import UtcDateTime
 
 
 class ResumeUploadResponse(BaseModel):
@@ -13,7 +13,7 @@ class ResumeUploadResponse(BaseModel):
     raw_text: str | None = None
     profile: dict | None = None
     error_detail: str | None = None
-    created_at: datetime
+    created_at: UtcDateTime
 
 class ResumeGetResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -22,7 +22,7 @@ class ResumeGetResponse(BaseModel):
     original_filename: str
     media_type: str
     status: str
-    created_at: datetime
+    created_at: UtcDateTime
 
 class EducationItem(BaseModel):
     school: str

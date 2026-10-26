@@ -1,6 +1,7 @@
 from typing import Literal
 from pydantic import BaseModel,ConfigDict,Field
-from datetime import datetime
+
+from app.schemas.utc import UtcDateTime
 
 
 Difficulty = Literal["easy", "medium", "hard"]
@@ -29,7 +30,7 @@ class InterviewSessionCreateResponse(BaseModel):
     target_role:str
     difficulty:Difficulty
     status:str
-    created_at:datetime
+    created_at:UtcDateTime
     current_turn:CurrentTurn
 
 # 计划的一个阶段
@@ -104,7 +105,7 @@ class InterviewSessionGetResponse(BaseModel):
     target_role:str
     difficulty: str
     status: str
-    created_at: datetime
+    created_at: UtcDateTime
     turns: list[InterviewTurnPublic]
     current_question: str | None
     report: InterviewReport | None = None
@@ -116,7 +117,7 @@ class InterviewSessionListItem(BaseModel):
     target_role: str
     difficulty: str
     status: str
-    created_at: datetime
+    created_at: UtcDateTime
     score: int | None = None
     current_question: str | None = None
 

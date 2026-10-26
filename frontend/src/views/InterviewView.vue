@@ -15,6 +15,7 @@ import {
 } from '@/api/interview'
 import { ApiError } from '@/api/http'
 import AppHeader from '@/components/AppHeader.vue'
+import { formatDate } from '@/utils/datetime'
 
 const router = useRouter()
 const formRef = ref<FormInstance>()
@@ -49,8 +50,7 @@ const readyResumes = computed(() => resumes.value.filter((item) => item.status =
 const canStart = computed(() => Boolean(form.resumeId) && !uploading.value && !starting.value)
 
 function formatTime(value: string) {
-  const date = new Date(value)
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  return formatDate(value)
 }
 
 function selectResume(row: ResumeListItem) {

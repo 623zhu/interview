@@ -9,6 +9,7 @@ import {
 } from '@/api/interview'
 import { ApiError } from '@/api/http'
 import AppHeader from '@/components/AppHeader.vue'
+import { formatDateTime } from '@/utils/datetime'
 
 const router = useRouter()
 const loading = ref(false)
@@ -34,13 +35,7 @@ const statusType: Record<string, 'info' | 'warning' | 'success'> = {
 }
 
 function formatTime(value: string) {
-  const date = new Date(value)
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  const hours = String(date.getHours()).padStart(2, '0')
-  const minutes = String(date.getMinutes()).padStart(2, '0')
-  return `${year}-${month}-${day} ${hours}:${minutes}`
+  return formatDateTime(value)
 }
 
 function openSession(row: InterviewSessionListItem) {

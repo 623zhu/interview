@@ -6,6 +6,7 @@ import { ArrowRight } from '@element-plus/icons-vue'
 import { listInterviewSessions, type InterviewSessionListItem } from '@/api/interview'
 import { ApiError } from '@/api/http'
 import AppHeader from '@/components/AppHeader.vue'
+import { formatRelativeDateTime, parseUtcDate } from '@/utils/datetime'
 
 const router = useRouter()
 const loading = ref(false)
@@ -28,7 +29,7 @@ function startOfWeek(date: Date) {
 
 const weekSessions = computed(() => {
   const weekStart = startOfWeek(new Date()).getTime()
-  return sessions.value.filter((item) => new Date(item.created_at).getTime() >= weekStart)
+  return sessions.value.filter((item) => parseUtcDate(item.created_at).getTime() >= weekStart)
 })
 
 const weekCount = computed(() => weekSessions.value.length)
@@ -69,16 +70,7 @@ function openSession(row: InterviewSessionListItem) {
 }
 
 function formatTime(value: string) {
-  const date = new Date(value)
-  const now = new Date()
-  const sameDay =
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate()
-  const hours = String(date.getHours()).padStart(2, '0')
-  const minutes = String(date.getMinutes()).padStart(2, '0')
-  if (sameDay) return `今天 ${hours}:${minutes}`
-  return `${date.getMonth() + 1}月${date.getDate()}日 ${hours}:${minutes}`
+  return formatRelativeDateTime(value)
 }
 
 async function loadSessions() {
