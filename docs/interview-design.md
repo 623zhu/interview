@@ -121,7 +121,7 @@ flowchart TD
 过滤（第一版不上向量库）：
 
 1. `status = published`
-2. `role_tags` 与岗位标签有交集（例如「Java 后端」→ `backend`、`java`；「Python 后端」→ `backend`、`python`；「AI Agent」→ `ai`）
+2. `role_tags` 与岗位标签有交集。创建场次时岗位只能是「Java 后端」（`backend`、`java`）、「Python 后端」（`backend`、`python`）或「AI Agent」（`ai`）
 3. `skill_tags` 与简历 `skills` 归一化后有交集；场景卡可以只按岗位
 4. 入池难度：简单场 `easy`+`medium`（不含 hard）；中等场和困难场三种都可
 5. 按配额抽样最多 12 张，某档不够用相邻档补。简单 8 easy + 4 medium；中等 3 easy + 7 medium + 2 hard；困难 2 easy + 5 medium + 5 hard
@@ -200,7 +200,7 @@ class TurnEvaluation(BaseModel):
 
 ### 3. 出题时模型只负责说话
 
-`ask` 节点只生成问题。输入包括：当前考点、这次动作、最近 2～3 轮、相关考点卡或简历锚点、`probe_path` 里对应深度。
+`ask` 节点只生成问题，对 `llm_model_light` 使用流式输出，只吐问题原文，不再包 JSON。输入包括：当前考点、这次动作、最近 2～3 轮、相关考点卡或简历锚点、`probe_path` 里对应深度。`POST /turns` 在 `Accept: text/event-stream` 时把 token 写成 SSE `delta`；评估仍先跑完。`persist` 仍在整题生成之后。第一问是模板，由前端打字机展示。
 
 问题素材有三个来源：
 

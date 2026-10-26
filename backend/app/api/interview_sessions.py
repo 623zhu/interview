@@ -1,6 +1,8 @@
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi.responses import StreamingResponse
 
 from app.api.deps import CurrentUser
 from app.graphs.turn_graph import (
@@ -15,7 +17,6 @@ from app.schemas.interviews import (
     InterviewSessionListItem,
     InterviewSessionPatchRequest,
     InterviewTurnSubmitRequest,
-    InterviewTurnSubmitResponse,
     SessionStatus,
 )
 from app.service.interview_session import (
@@ -29,7 +30,11 @@ from app.service.interview_session import (
     get_interview_session_service,
     list_interview_sessions_service,
 )
-from app.service.interview_turn import submit_turn_service
+from app.service.interview_turn import (
+    assert_can_submit_turn,
+    submit_turn_service,
+    submit_turn_sse,
+)
 
 router = APIRouter(prefix="/api/v1/interview-sessions", tags=["interview-sessions"])
 
@@ -88,13 +93,50 @@ async def list_interview_sessions(
     "/{session_id}/turns",
     status_code=status.HTTP_200_OK,
     summary="提交本轮回答",
+    description="默认返回 JSON。请求头 Accept 包含 text/event-stream 时，评估完成后以 SSE 流式返回下一问。",
 )
 async def submit_interview_turn(
     session_id: int,
     body: InterviewTurnSubmitRequest,
     current_user: CurrentUser,
     request: Request,
-) -> InterviewTurnSubmitResponse:
+) -> Any:
+    wants_sse = "text/event-stream" in request.headers.get("accept", "")
+    if wants_sse:
+        async with request.app.state.mysql_session_factory() as db:
+            try:
+                await assert_can_submit_turn(
+                    user_id=current_user.id,
+                    session_id=session_id,
+                    db=db,
+                )
+            except (TurnSessionNotFoundError, SessionNotFoundError):
+                raise HTTPException(status.HTTP_404_NOT_FOUND, detail="面试场次不存在")
+            except TurnSessionConflictError:
+                raise HTTPException(status.HTTP_409_CONFLICT, detail="当前场次无法作答")
+
+        async def events():
+            async with request.app.state.mysql_session_factory() as db:
+                async for chunk in submit_turn_sse(
+                    user_id=current_user.id,
+                    session_id=session_id,
+                    answer=body.answer,
+                    db=db,
+                    llm_client=request.app.state.llm_client,
+                    turn_graph=request.app.state.turn_graph,
+                ):
+                    yield chunk
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
     async with request.app.state.mysql_session_factory() as db:
         try:
             return await submit_turn_service(

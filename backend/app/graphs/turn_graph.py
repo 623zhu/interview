@@ -1,12 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from openai import AsyncOpenAI
-from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -53,13 +53,17 @@ comment 里的分数必须等于 score。
 """
 
 ASK_PROMPT = """
-你是模拟面试官。根据指定动作生成下一问，只返回 JSON:{"question": "..."}
+你是模拟面试官。根据指定动作生成下一问。
+只输出问题原文，不要 JSON，不要 markdown，不要前后引号或书名号。
 约束：
 - 只做简短承接，不评价对错，不说出答案。
 - 不编造简历里没有的经历。
 - 不要把考点卡原文当题面念出来。
 - 一到两句话，口语化。
 """
+
+CLOSING_QUESTION = "今天的面试先到这里，你有想问我的吗？"
+TEMPLATE_CHUNK_INTERVAL = 0.024
 
 
 class SessionNotFoundError(Exception):
@@ -72,10 +76,6 @@ class SessionConflictError(Exception):
 
 class TurnPipelineError(Exception):
     pass
-
-
-class _AskOutput(BaseModel):
-    question: str = Field(min_length=1, max_length=2048)
 
 
 # 从langGraph 配置中取出数据库会话，用户编号和模型客户端
@@ -300,6 +300,85 @@ def report(state: TurnState) -> dict[str, Any]:
     return {"report": built.model_dump(), "question": None}
 
 
+async def _emit_sse(config: RunnableConfig, event: str, data: dict[str, Any]) -> None:
+    queue = _cfg(config).get("token_queue")
+    if queue is None:
+        return
+    await queue.put((event, data))
+
+
+def _normalize_question(raw: str) -> str:
+    text = raw.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    if len(text) >= 2 and (
+        (text[0] == text[-1] and text[0] in {'"', "'"})
+        or (text.startswith("「") and text.endswith("」"))
+    ):
+        text = text[1:-1].strip()
+    if text.startswith("{"):
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict) and parsed.get("question"):
+                text = str(parsed["question"]).strip()
+        except json.JSONDecodeError:
+            pass
+    return text[:2048]
+
+
+async def _emit_question_chunks(config: RunnableConfig, question: str) -> None:
+    if _cfg(config).get("token_queue") is None:
+        return
+    await _emit_sse(config, "status", {"phase": "asking"})
+    for index in range(0, len(question)):
+        await _emit_sse(config, "delta", {"text": question[index : index + 1]})
+        await asyncio.sleep(TEMPLATE_CHUNK_INTERVAL)
+
+
+async def _stream_llm_question(
+    llm_client: AsyncOpenAI,
+    payload: dict[str, Any],
+    config: RunnableConfig,
+) -> str:
+    last_error: Exception | None = None
+    for _ in range(ASK_RETRY + 1):
+        sent_any = False
+        collected: list[str] = []
+        try:
+            await _emit_sse(config, "status", {"phase": "asking"})
+            stream = await llm_client.chat.completions.create(
+                model=settings.llm_model_light,
+                messages=[
+                    {"role": "system", "content": ASK_PROMPT},
+                    {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+                ],
+                stream=True,
+            )
+            async for event in stream:
+                if not event.choices:
+                    continue
+                piece = event.choices[0].delta.content
+                if not piece:
+                    continue
+                collected.append(piece)
+                sent_any = True
+                await _emit_sse(config, "delta", {"text": piece})
+            question = _normalize_question("".join(collected))
+            if not question:
+                raise TurnPipelineError("empty question")
+            return question
+        except Exception as exc:
+            last_error = exc
+            if sent_any:
+                break
+    raise TurnPipelineError(str(last_error) if last_error else "ask failed")
+
+
 async def ask(state: TurnState, config: RunnableConfig) -> dict[str, Any]:
     cfg = _cfg(config)
     db: AsyncSession = cfg["db"]
@@ -309,13 +388,14 @@ async def ask(state: TurnState, config: RunnableConfig) -> dict[str, Any]:
     stage = plan.stages[next_progress.stage_index]
     profile = ResumeProfile.model_validate(state["resume_snapshot"])
 
-    if stage.kind == "closing":
-        return {"question": "今天的面试先到这里，你有想问我的吗？"}
-
     card = state.get("current_card")
     if state.get("action") == "next_stage":
         loaded = await _load_card(db, stage.topic_card_key)
         card = _dump_card(loaded)
+
+    if stage.kind == "closing":
+        await _emit_question_chunks(config, CLOSING_QUESTION)
+        return {"question": CLOSING_QUESTION, "current_card": card}
 
     recent = [
         {
@@ -358,25 +438,8 @@ async def ask(state: TurnState, config: RunnableConfig) -> dict[str, Any]:
             else None
         ),
     }
-    last_error: Exception | None = None
-    for _ in range(ASK_RETRY + 1):
-        try:
-            completion = await llm_client.chat.completions.create(
-                model=settings.llm_model_light,
-                messages=[
-                    {"role": "system", "content": ASK_PROMPT},
-                    {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
-                ],
-                response_format={"type": "json_object"},
-            )
-            raw = completion.choices[0].message.content
-            if not raw:
-                raise TurnPipelineError("empty question")
-            question = _AskOutput.model_validate_json(raw).question
-            return {"question": question, "current_card": card}
-        except Exception as exc:
-            last_error = exc
-    raise TurnPipelineError(str(last_error) if last_error else "ask failed")
+    question = await _stream_llm_question(llm_client, payload, config)
+    return {"question": question, "current_card": card}
 
 # 本轮回答和评估写回数据库
 async def persist(state: TurnState, config: RunnableConfig) -> dict[str, Any]:

@@ -5,10 +5,13 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules, UploadRequestOptions } from 'element-plus'
 import { listResumes, uploadResume, type ResumeListItem } from '@/api/resume'
 import {
+  TARGET_ROLES,
   createInterviewSession,
   listInterviewSessions,
+  markSessionTypewriter,
   type Difficulty,
   type InterviewSessionListItem,
+  type TargetRole,
 } from '@/api/interview'
 import { ApiError } from '@/api/http'
 import AppHeader from '@/components/AppHeader.vue'
@@ -23,16 +26,13 @@ const activeSession = ref<InterviewSessionListItem | null>(null)
 
 const form = reactive({
   resumeId: null as number | null,
-  targetRole: 'Java 后端',
+  targetRole: 'Java 后端' as TargetRole,
   difficulty: 'medium' as Difficulty,
 })
 
 const rules: FormRules = {
   resumeId: [{ required: true, message: '请选择一份可用简历', trigger: 'change' }],
-  targetRole: [
-    { required: true, message: '请填写面试岗位', trigger: 'blur' },
-    { min: 1, max: 128, message: '岗位名称不超过 128 字', trigger: 'blur' },
-  ],
+  targetRole: [{ required: true, message: '请选择面试岗位', trigger: 'change' }],
   difficulty: [{ required: true, message: '请选择面试难度', trigger: 'change' }],
 }
 
@@ -128,9 +128,10 @@ async function startInterview(resumeId = form.resumeId) {
   try {
     const session = await createInterviewSession({
       resume_id: form.resumeId,
-      target_role: form.targetRole.trim(),
+      target_role: form.targetRole,
       difficulty: form.difficulty,
     })
+    markSessionTypewriter(session.id)
     await router.push(`/interview/${session.id}`)
   } catch (error) {
     ElMessage.error(error instanceof ApiError ? error.message : '开始面试失败')
@@ -156,7 +157,7 @@ onMounted(loadPage)
       <div class="content">
         <div class="intro">
           <h1>模拟面试</h1>
-          <p>在同一个设置里上传或选择简历，填好岗位和难度后开场。</p>
+          <p>在同一个设置里上传或选择简历，选好岗位和难度后开场。</p>
         </div>
 
         <el-alert
@@ -232,12 +233,19 @@ onMounted(loadPage)
                 </el-form-item>
 
                 <el-form-item label="面试岗位" prop="targetRole">
-                  <el-input
+                  <el-select
                     v-model="form.targetRole"
-                    maxlength="128"
                     :disabled="starting"
-                    placeholder="例如：Java 后端"
-                  />
+                    placeholder="选择面试岗位"
+                    style="width: 100%"
+                  >
+                    <el-option
+                      v-for="role in TARGET_ROLES"
+                      :key="role"
+                      :label="role"
+                      :value="role"
+                    />
+                  </el-select>
                 </el-form-item>
 
                 <el-form-item label="面试难度" prop="difficulty">

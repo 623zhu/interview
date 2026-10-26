@@ -96,7 +96,7 @@
 | `id` | `BIGINT UNSIGNED` | 是 | 自增 | 主键 | `PRIMARY KEY` |
 | `user_id` | `BIGINT UNSIGNED` | 是 | 无 | 面试所属用户 | `fk_interview_sessions_user_id` |
 | `resume_id` | `BIGINT UNSIGNED` | 是 | 无 | 开场时使用的简历。删除简历时默认限制 | `fk_interview_sessions_resume_id` |
-| `target_role` | `VARCHAR(128)` | 是 | 无 | 目标岗位，自由文本，例如「Java 后端」 |  |
+| `target_role` | `VARCHAR(128)` | 是 | 无 | 目标岗位。新场次为 `Java 后端` / `Python 后端` / `AI Agent`；历史场次可能仍是自由文本 |  |
 | `difficulty` | `VARCHAR(32)` | 是 | 无 | `easy` / `medium` / `hard`，与考点卡一致 |  |
 | `status` | `VARCHAR(32)` | 是 | 无 | `planned` / `in_progress` / `completed` / `abandoned`。给出第一问后为 `in_progress` |  |
 | `resume_snapshot` | `JSON` | 是 | 无 | 开场时的 `ResumeProfile` 拷贝，后续改简历不影响本场 |  |

@@ -275,6 +275,8 @@ Authorization: Bearer <access_token>
 }
 ```
 
+`target_role`：`Java 后端` / `Python 后端` / `AI Agent`。决定考点卡的岗位标签（分别对应 `backend`+`java`、`backend`+`python`、`ai`）。
+
 `difficulty`：`easy` / `medium` / `hard`。决定本场候选卡的难度配比（简单以 easy 为主并掺 medium，中等以 medium 为主，困难提高 hard 占比），不是只抽该档卡片。
 
 成功返回 `201`：
@@ -295,7 +297,7 @@ Authorization: Bearer <access_token>
 }
 ```
 
-简历不存在或不属于当前用户返回 `404`。简历未就绪返回 `400`。生成计划失败返回 `500`，文案「生成面试计划失败」。`resume_id` 或 `difficulty` 不合法返回 `422`。
+简历不存在或不属于当前用户返回 `404`。简历未就绪返回 `400`。生成计划失败返回 `500`，文案「生成面试计划失败」。`resume_id`、`target_role` 或 `difficulty` 不合法返回 `422`。
 
 ## 面试场次列表
 
@@ -487,6 +489,34 @@ Authorization: Bearer <access_token>
 
 没有待答轮次、场次已结束或已放弃返回 `409`。场次不存在或不属于当前用户返回 `404`。空回答返回 `422`。评估或出题失败返回 `500`，文案「处理本轮回答失败」。
 
+请求头 `Accept` 包含 `text/event-stream` 时，同一路径改为 SSE。先校验场次能否作答：不存在仍返回 `404`，无法作答仍返回 `409`。通过后响应 `200`，`Content-Type` 为 `text/event-stream`。评估阶段先发 `status`，出题时按 token 发 `delta`，落库后再发 `done`。图仍在一次请求内跑完，不保存跨请求状态。
+
+```
+event: status
+data: {"phase":"evaluating"}
+
+event: status
+data: {"phase":"asking"}
+
+event: delta
+data: {"text":"你刚才说失败会重试，"}
+
+event: delta
+data: {"text":"一直失败的话谁来保证最终一致？"}
+
+event: done
+data: {"id":1,"status":"in_progress","current_turn":{"seq":3,"action":"follow_up","question":"你刚才说失败会重试，一直失败的话谁来保证最终一致？"},"report":null}
+```
+
+`phase` 为 `evaluating` 或 `asking`。结束时 `done` 的 JSON 与上面的成功响应相同。流开始后的失败改为：
+
+```
+event: error
+data: {"detail":"处理本轮回答失败"}
+```
+
+第一问仍由创建场次的 JSON 返回，不走 SSE。
+
 用户响应中不返回本轮完整 `evaluation`。评估写入 `interview_turns.evaluation`（含模型给出的分数和点评）。代码按深度、跑题、「不会」把分数钳在区间内，并让点评开头的分数与之一致。结束时按阶段加权：`project_probe` 0.35、`fundamentals` 0.30、`scenario` 0.35；同一 `kind` 的多段先平均，开场和收尾不计分。`intro` / `closing` 用代码评估，不调模型；`closing` 问句为模板。
 
 ## 业务流程
@@ -505,10 +535,10 @@ Authorization: Bearer <access_token>
 1. `POST /api/v1/resumes` 上传简历，直到 `status=ready`。
 2. `GET /api/v1/resumes` 选择一份简历。
 3. `POST /api/v1/interview-sessions` 开始面试，拿到第一问。
-4. 循环 `POST /api/v1/interview-sessions/{id}/turns` 提交回答，直到 `status=completed`。中途结束则 `PATCH /api/v1/interview-sessions/{id}`，`status` 为 `abandoned`。
+4. 循环 `POST /api/v1/interview-sessions/{id}/turns` 提交回答，直到 `status=completed`。前端对话页带 `Accept: text/event-stream` 流式接收下一问。中途结束则 `PATCH /api/v1/interview-sessions/{id}`，`status` 为 `abandoned`。
 5. `GET /api/v1/interview-sessions` 查看自己的场次列表；`GET /api/v1/interview-sessions/{id}` 查看某一场问答。结束后还可看各轮点评、分数和报告。进行中也可看每次 turns 响应里的 `current_turn`。
 
-每一次提交回答对应一次 `turn_graph.ainvoke`。创建场次目前走 service，语义与计划中的 `plan_graph` 相同。编排说明见 `docs/interview-design.md`。
+每一次提交回答对应一次 `turn_graph.ainvoke`。出题节点对模型走流式调用；SSE 把 token 推给客户端，JSON 调用仍等整题生成完再返回。创建场次目前走 service，语义与计划中的 `plan_graph` 相同。编排说明见 `docs/interview-design.md`。
 
 ## 待补充内容
 

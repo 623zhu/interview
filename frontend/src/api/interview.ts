@@ -1,7 +1,14 @@
-import { request } from './http'
+import { ApiError, request } from './http'
+import { readSseStream } from './sse'
+import { useAuthStore } from '@/stores/auth'
+
+export const TYPEWRITER_SESSION_KEY = 'ai-interview-typewriter'
 
 export type Difficulty = 'easy' | 'medium' | 'hard'
+export type TargetRole = 'Java 后端' | 'Python 后端' | 'AI Agent'
 export type SessionStatus = 'planned' | 'in_progress' | 'completed' | 'abandoned'
+
+export const TARGET_ROLES: TargetRole[] = ['Java 后端', 'Python 后端', 'AI Agent']
 
 export interface InterviewSessionListItem {
   id: number
@@ -74,7 +81,7 @@ export function listInterviewSessions(params?: { status?: SessionStatus; limit?:
 
 export function createInterviewSession(body: {
   resume_id: number
-  target_role: string
+  target_role: TargetRole
   difficulty: Difficulty
 }) {
   return request<InterviewSessionCreateResponse>('/api/v1/interview-sessions', {
@@ -92,6 +99,49 @@ export function submitInterviewTurn(id: number, answer: string) {
     method: 'POST',
     body: JSON.stringify({ answer }),
   })
+}
+
+export async function submitInterviewTurnStream(
+  id: number,
+  answer: string,
+  onEvent: (event: string, data: unknown) => void,
+  signal?: AbortSignal,
+) {
+  const accessToken = useAuthStore().accessToken
+  const headers = new Headers({
+    Accept: 'text/event-stream',
+    'Content-Type': 'application/json',
+  })
+  if (accessToken) {
+    headers.set('Authorization', `Bearer ${accessToken}`)
+  }
+  const response = await fetch(`/api/api/v1/interview-sessions/${id}/turns`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ answer }),
+    signal,
+  })
+  if (!response.ok) {
+    const body = await response.json().catch(() => null)
+    const detail = body?.detail
+    const message =
+      typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((item: { msg?: string }) => item.msg ?? '').join(';') : '请求失败'
+    throw new ApiError(response.status, message)
+  }
+  await readSseStream(response, onEvent)
+}
+
+export function markSessionTypewriter(id: number) {
+  sessionStorage.setItem(`${TYPEWRITER_SESSION_KEY}:${id}`, '1')
+}
+
+export function consumeSessionTypewriter(id: number) {
+  const key = `${TYPEWRITER_SESSION_KEY}:${id}`
+  const enabled = sessionStorage.getItem(key) === '1'
+  if (enabled) {
+    sessionStorage.removeItem(key)
+  }
+  return enabled
 }
 
 export function abandonInterviewSession(id: number) {
