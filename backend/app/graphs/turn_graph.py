@@ -57,12 +57,22 @@ ASK_PROMPT = """
 你是模拟面试官。根据指定动作生成下一问。
 只输出问题原文，不要 JSON，不要 markdown，不要前后引号或书名号。
 约束：
-- 只做简短承接，不评价对错，不说出答案。
+- 不要客套，不要「好」「先到这儿」「那咱们换个方向聊聊」「接下来考一下」这类垫话。
+- follow_up、hint：回答有错漏、跑题或含糊时，用半句点出问题所在，然后立刻追问。点问题要具体，对照 missing、vague_quotes、off_topic。不要把正确答案讲出来，不要报分数。
+- next_stage、deepen、first：直接提问，不要点评上一题。
 - 不编造简历里没有的经历。
 - 不要把考点卡原文当题面念出来。
-- 不要复述或粘贴候选人的自我介绍、上一轮长段原话。只针对其中一个点追问。
-- 一到两句话，口语化。
+- 不要复述或粘贴候选人的自我介绍、上一轮长段原话。
+- 一两句口语。
 """
+
+ASK_STYLE = {
+    "follow_up": "回答有错漏或含糊时，先用半句点出问题，再追问。不要给标准答案，不要报分数，不要客套。",
+    "hint": "点出卡在哪里，给思考方向，不要把答案讲出来，不要报分数，不要客套。",
+    "deepen": "直接往深处问。不要夸奖，不要客套。",
+    "next_stage": "不要点评上一题，不要客套过渡，第一句就是新问题。",
+    "first": "直接提问，不要客套。",
+}
 
 sse_token_queue: contextvars.ContextVar[asyncio.Queue[tuple[str, dict[str, Any]] | None] | None] = (
     contextvars.ContextVar("sse_token_queue", default=None)
@@ -341,6 +351,19 @@ def _normalize_question(raw: str) -> str:
     return text[:2048]
 
 
+def _ask_evaluation(raw: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not raw:
+        return None
+    return {
+        "covered": raw.get("covered"),
+        "missing": raw.get("missing"),
+        "depth": raw.get("depth"),
+        "vague_quotes": raw.get("vague_quotes"),
+        "said_dont_know": raw.get("said_dont_know"),
+        "off_topic": raw.get("off_topic"),
+    }
+
+
 def _clip_text(value: str | None, limit: int) -> str:
     text = (value or "").strip()
     if len(text) <= limit:
@@ -440,12 +463,13 @@ async def ask(state: TurnState, config: RunnableConfig) -> dict[str, Any]:
     project = _find_project(profile, stage.resume_anchor)
     payload = {
         "action": state["action"],
+        "style": ASK_STYLE.get(str(state.get("action") or ""), "不要客套，直接提问。"),
         "stage": {
             "kind": stage.kind,
             "goal": stage.goal,
             "resume_anchor": stage.resume_anchor,
         },
-        "evaluation": state.get("evaluation"),
+        "evaluation": _ask_evaluation(state.get("evaluation")),
         "recent_turns": recent,
         "resume_skills": profile.skills,
         "project": project.model_dump() if project is not None else None,
