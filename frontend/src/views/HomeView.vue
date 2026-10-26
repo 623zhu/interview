@@ -64,6 +64,10 @@ const statusType: Record<string, 'info' | 'warning' | 'success'> = {
   abandoned: 'info',
 }
 
+function openSession(row: InterviewSessionListItem) {
+  void router.push(`/interview/${row.id}`)
+}
+
 function formatTime(value: string) {
   const date = new Date(value)
   const now = new Date()
@@ -150,7 +154,13 @@ onMounted(loadSessions)
             </div>
           </template>
 
-          <el-table v-if="recentSessions.length" :data="recentSessions" empty-text="暂无记录">
+          <el-table
+            v-if="recentSessions.length"
+            class="table"
+            :data="recentSessions"
+            empty-text="暂无记录"
+            @row-click="openSession"
+          >
             <el-table-column prop="target_role" label="目标岗位" min-width="140" />
             <el-table-column label="难度" width="100">
               <template #default="{ row }">
@@ -172,6 +182,17 @@ onMounted(loadSessions)
             <el-table-column label="得分" width="90">
               <template #default="{ row }">
                 {{ row.score == null ? '—' : row.score }}
+              </template>
+            </el-table-column>
+            <el-table-column label="" width="120" align="right">
+              <template #default="{ row }">
+                <el-button
+                  link
+                  type="primary"
+                  @click.stop="openSession(row)"
+                >
+                  {{ row.status === 'in_progress' ? '继续面试' : '查看详情' }}
+                </el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -255,5 +276,8 @@ onMounted(loadSessions)
   font-size: 13px;
   font-weight: 400;
   color: var(--el-text-color-secondary);
+}
+.table {
+  cursor: pointer;
 }
 </style>

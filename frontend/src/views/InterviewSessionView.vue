@@ -51,6 +51,13 @@ const difficultyLabel: Record<string, string> = {
   medium: '中等',
   hard: '困难',
 }
+const stageLabel: Record<string, string> = {
+  intro: '开场',
+  project_probe: '项目深挖',
+  fundamentals: '基础',
+  scenario: '场景',
+  closing: '收尾',
+}
 
 let abortStream: AbortController | null = null
 let typewriterToken = 0
@@ -375,7 +382,9 @@ onUnmounted(() => {
             </p>
           </div>
           <div class="intro-actions">
-            <el-button @click="router.push('/interview')">返回设置</el-button>
+            <el-button @click="router.push(inProgress ? '/interview' : '/records')">
+              {{ inProgress ? '返回设置' : '返回记录' }}
+            </el-button>
             <el-button
               v-if="inProgress"
               :loading="abandoning"
@@ -414,6 +423,11 @@ onUnmounted(() => {
           <div v-if="session.report" class="report">
             <div class="report-title">本场报告</div>
             <p class="score">总分 {{ session.report.score }}</p>
+            <div v-if="session.report.stages.length" class="stages">
+              <span v-for="item in session.report.stages" :key="item.kind" class="stage">
+                {{ stageLabel[item.kind] ?? item.kind }} {{ item.score }}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -584,6 +598,19 @@ onUnmounted(() => {
   margin: 8px 0 0;
   font-size: 22px;
   font-weight: 600;
+}
+.stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.stage {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
 }
 .composer {
   display: flex;

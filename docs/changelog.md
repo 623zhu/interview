@@ -23,6 +23,7 @@
 - 登录后可 `GET /api/v1/interview-sessions` 查看自己的场次列表，支持按状态和创建时间过滤。结束后的总分来自已写入的 `report.score`。
 - 进行中的场次可用 `PATCH /api/v1/interview-sessions/{id}` 标为 `abandoned` 中途结束。不生成报告，之后不能再作答。
 - 新增 `POST /api/v1/users/session/refresh`：用刷新令牌换发新的访问令牌和刷新令牌，旧刷新令牌立即失效。不需要 `Authorization`。
+- 面试记录页接入 `GET /api/v1/interview-sessions`。可按状态筛选，点进详情看问答和报告；进行中的场次可继续作答。
 
 ### Fixed
 
