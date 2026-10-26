@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { Clock, Grid, MagicStick } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 
 const route = useRoute()
@@ -27,9 +28,18 @@ async function onLogout() {
         :ellipsis="false"
         :default-active="activeIndex"
       >
-        <el-menu-item index="/home">面试工作台</el-menu-item>
-        <el-menu-item index="/interview">模拟面试</el-menu-item>
-        <el-menu-item index="/records">面试记录</el-menu-item>
+        <el-menu-item index="/home">
+          <el-icon><Grid /></el-icon>
+          <span>面试工作台</span>
+        </el-menu-item>
+        <el-menu-item index="/interview">
+          <el-icon><MagicStick /></el-icon>
+          <span>模拟面试</span>
+        </el-menu-item>
+        <el-menu-item index="/records">
+          <el-icon><Clock /></el-icon>
+          <span>面试记录</span>
+        </el-menu-item>
       </el-menu>
       <el-dropdown>
         <el-avatar class="avatar">U</el-avatar>

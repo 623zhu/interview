@@ -66,14 +66,6 @@ onMounted(loadSessions)
 
     <main v-loading="loading" class="main">
       <div class="content">
-        <div class="intro">
-          <div>
-            <h1>面试记录</h1>
-            <p>查看自己的场次、分数和问答详情。进行中的可以继续作答。</p>
-          </div>
-          <el-button type="primary" @click="router.push('/interview')">开始新面试</el-button>
-        </div>
-
         <el-card class="panel" shadow="never">
           <div class="toolbar">
             <el-radio-group v-model="statusFilter" @change="loadSessions">
@@ -82,6 +74,7 @@ onMounted(loadSessions)
               <el-radio-button value="completed">已完成</el-radio-button>
               <el-radio-button value="abandoned">已放弃</el-radio-button>
             </el-radio-group>
+            <el-button type="primary" @click="router.push('/interview')">开始新面试</el-button>
           </div>
 
           <el-table
@@ -91,7 +84,11 @@ onMounted(loadSessions)
             class="table"
             @row-click="openSession"
           >
-            <el-table-column prop="target_role" label="目标岗位" min-width="140" />
+            <el-table-column label="目标岗位" min-width="140">
+              <template #default="{ row }">
+                <span class="role-name">{{ row.target_role }}</span>
+              </template>
+            </el-table-column>
             <el-table-column label="难度" width="100">
               <template #default="{ row }">
                 {{ difficultyLabel[row.difficulty] ?? row.difficulty }}
@@ -109,9 +106,12 @@ onMounted(loadSessions)
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="得分" width="90">
+            <el-table-column label="得分" width="110">
               <template #default="{ row }">
-                {{ row.score == null ? '—' : row.score }}
+                <span v-if="row.score == null" class="score-empty">—</span>
+                <span v-else class="score">
+                  <strong>{{ row.score }}</strong><span>/100</span>
+                </span>
               </template>
             </el-table-column>
             <el-table-column label="" width="120" align="right">
@@ -144,28 +144,46 @@ onMounted(loadSessions)
   max-width: 1080px;
   margin: 0 auto;
 }
-.intro {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 20px;
-}
-.intro h1 {
-  margin: 0;
-  font-size: 26px;
-}
-.intro p {
-  margin: 8px 0 0;
-  color: var(--el-text-color-secondary);
-}
 .panel {
-  border-radius: 12px;
+  border-radius: 18px;
 }
 .toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 16px;
 }
 .table {
   cursor: pointer;
+  font-size: 14px;
+  --el-table-header-text-color: var(--el-text-color-secondary);
+}
+.table :deep(th.el-table__cell) {
+  font-size: 12px;
+  font-weight: 500;
+  background: transparent;
+}
+.table :deep(td.el-table__cell) {
+  padding: 16px 0;
+  color: var(--el-text-color-regular);
+}
+.role-name {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.score strong {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+}
+.score span {
+  margin-left: 2px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.score-empty {
+  color: var(--el-text-color-placeholder);
 }
 </style>

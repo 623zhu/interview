@@ -141,7 +141,7 @@ const bestSession = computed(() =>
 const activeSession = computed(
   () => sessions.value.find((item) => item.status === 'in_progress') ?? null,
 )
-const recentSessions = computed(() => sessions.value.slice(0, 5))
+const recentSessions = computed(() => sessions.value.slice(0, 3))
 
 const difficultyLabel: Record<string, string> = {
   easy: '简单',
@@ -336,11 +336,16 @@ onMounted(loadSessions)
           <template #header>
             <div class="records-header">
               <div>
-                <div>最近面试</div>
-                <p>查看最近几场练习，完整列表在面试记录里。</p>
+                <div class="records-title">最近面试</div>
+                <p>回顾表现，持续迭代你的回答</p>
               </div>
-              <el-link type="primary" :underline="false" @click="router.push('/records')">
-                查看全部
+              <el-link
+                class="records-more"
+                type="primary"
+                :underline="false"
+                @click="router.push('/records')"
+              >
+                查看全部<el-icon><ArrowRight /></el-icon>
               </el-link>
             </div>
           </template>
@@ -352,7 +357,11 @@ onMounted(loadSessions)
             empty-text="暂无记录"
             @row-click="openSession"
           >
-            <el-table-column prop="target_role" label="目标岗位" min-width="140" />
+            <el-table-column label="目标岗位" min-width="140">
+              <template #default="{ row }">
+                <span class="role-name">{{ row.target_role }}</span>
+              </template>
+            </el-table-column>
             <el-table-column label="难度" width="100">
               <template #default="{ row }">
                 {{ difficultyLabel[row.difficulty] ?? row.difficulty }}
@@ -370,9 +379,12 @@ onMounted(loadSessions)
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="得分" width="90">
+            <el-table-column label="得分" width="110">
               <template #default="{ row }">
-                {{ row.score == null ? '—' : row.score }}
+                <span v-if="row.score == null" class="score-empty">—</span>
+                <span v-else class="score">
+                  <strong>{{ row.score }}</strong><span>/100</span>
+                </span>
               </template>
             </el-table-column>
             <el-table-column label="" width="120" align="right">
@@ -728,14 +740,54 @@ onMounted(loadSessions)
   justify-content: space-between;
   gap: 16px;
 }
+.records-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+}
 .records-header p {
   margin: 4px 0 0;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 400;
   color: var(--el-text-color-secondary);
 }
+.records-more {
+  font-size: 14px;
+  font-weight: 500;
+}
+.records-more .el-icon {
+  margin-left: 2px;
+}
 .table {
   cursor: pointer;
+  font-size: 14px;
+  --el-table-header-text-color: var(--el-text-color-secondary);
+}
+.table :deep(th.el-table__cell) {
+  font-size: 12px;
+  font-weight: 500;
+  background: transparent;
+}
+.table :deep(td.el-table__cell) {
+  padding: 16px 0;
+  color: var(--el-text-color-regular);
+}
+.role-name {
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.score strong {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+}
+.score span {
+  margin-left: 2px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.score-empty {
+  color: var(--el-text-color-placeholder);
 }
 
 @media (max-width: 960px) {

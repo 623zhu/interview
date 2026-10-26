@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules, UploadRequestOptions } from 'element-plus'
+import { ArrowRight, Check, Document, Files, Loading } from '@element-plus/icons-vue'
 import { listResumes, uploadResume, type ResumeListItem } from '@/api/resume'
 import {
   TARGET_ROLES,
@@ -47,22 +48,27 @@ const statusLabel: Record<string, string> = {
   ready: '可用',
   failed: '解析失败',
 }
-const statusType: Record<string, 'success' | 'danger' | 'info'> = {
-  ready: 'success',
-  failed: 'danger',
-}
+
+const difficultyOptions: { value: Difficulty; label: string; desc: string }[] = [
+  { value: 'easy', label: '简单', desc: '适合初次练习' },
+  { value: 'medium', label: '中等', desc: '贴近常规面试' },
+  { value: 'hard', label: '困难', desc: '高阶追问挑战' },
+]
 
 const readyResumes = computed(() => resumes.value.filter((item) => item.status === 'ready'))
+const recentResumes = computed(() => resumes.value.slice(0, 3))
 const canStart = computed(() => Boolean(form.resumeId) && !uploading.value && !starting.value)
 
 function formatTime(value: string) {
   return formatDate(value)
 }
 
-function selectResume(row: ResumeListItem) {
-  if (row.status === 'ready') {
-    form.resumeId = row.id
-  }
+function fileKind(row: ResumeListItem) {
+  return row.original_filename.toLowerCase().endsWith('.pdf') ? 'pdf' : 'docx'
+}
+
+function fileLabel(row: ResumeListItem) {
+  return fileKind(row) === 'pdf' ? 'PDF' : 'DOC'
 }
 
 async function loadPage() {
@@ -161,11 +167,6 @@ onMounted(loadPage)
 
     <main v-loading="loading" class="main">
       <div class="content">
-        <div class="intro">
-          <h1>模拟面试</h1>
-          <p>在同一个设置里上传或选择简历，选好岗位和难度后开场。</p>
-        </div>
-
         <el-alert
           v-if="activeSession"
           class="ongoing"
@@ -183,13 +184,22 @@ onMounted(loadPage)
           </template>
         </el-alert>
 
-        <el-card class="panel" shadow="never">
-          <template #header>
-            <div class="card-header">
-              <div>开始模拟面试</div>
-              <p>生成第一问需要一点时间，请等场次创建完成后再作答。</p>
+        <section class="setup-card">
+          <div class="setup-head">
+            <div>
+              <h2>面试设置</h2>
+              <p>大约需要 1 分钟完成配置</p>
             </div>
-          </template>
+            <div class="steps">
+              <span class="step" :class="{ active: !starting, done: starting }">
+                <span class="step-no">1</span>设置
+              </span>
+              <span class="step-line" />
+              <span class="step" :class="{ active: starting }">
+                <span class="step-no">2</span>准备
+              </span>
+            </div>
+          </div>
 
           <el-form
             ref="formRef"
@@ -199,117 +209,151 @@ onMounted(loadPage)
             label-position="top"
             @submit.prevent="startInterview()"
           >
-            <el-row :gutter="24">
-              <el-col :xs="24" :md="11">
-                <el-form-item label="上传简历">
-                  <el-upload
-                    drag
-                    class="uploader"
-                    :show-file-list="false"
-                    :disabled="uploading || starting"
-                    accept=".pdf,.docx"
-                    :before-upload="beforeUpload"
-                    :http-request="onUpload"
-                  >
-                    <div class="upload-text">
-                      {{ uploading ? '正在解析简历…' : '将简历拖到此处，或点击上传' }}
-                    </div>
-                    <template #tip>
-                      <div class="el-upload__tip">仅支持 .pdf、.docx，不超过 10MB</div>
-                    </template>
-                  </el-upload>
-                </el-form-item>
-              </el-col>
-
-              <el-col :xs="24" :md="13">
-                <el-form-item label="已上传的简历" prop="resumeId">
-                  <el-select
-                    v-model="form.resumeId"
-                    placeholder="选择一份可用简历"
-                    :disabled="starting"
-                    style="width: 100%"
-                  >
-                    <el-option
-                      v-for="item in readyResumes"
-                      :key="item.id"
-                      :label="item.original_filename"
-                      :value="item.id"
-                    />
-                  </el-select>
-                </el-form-item>
-
-                <el-form-item label="面试岗位" prop="targetRole">
-                  <el-select
-                    v-model="form.targetRole"
-                    :disabled="starting"
-                    placeholder="选择面试岗位"
-                    style="width: 100%"
-                  >
-                    <el-option
-                      v-for="role in TARGET_ROLES"
-                      :key="role"
-                      :label="role"
-                      :value="role"
-                    />
-                  </el-select>
-                </el-form-item>
-
-                <el-form-item label="面试难度" prop="difficulty">
-                  <el-radio-group v-model="form.difficulty" :disabled="starting">
-                    <el-radio-button value="easy">简单</el-radio-button>
-                    <el-radio-button value="medium">中等</el-radio-button>
-                    <el-radio-button value="hard">困难</el-radio-button>
-                  </el-radio-group>
-                </el-form-item>
-
-                <el-button
-                  type="primary"
-                  native-type="submit"
-                  :loading="starting"
-                  :disabled="!canStart"
+            <div class="setup-row">
+              <el-form-item label="目标岗位" prop="targetRole">
+                <el-select
+                  v-model="form.targetRole"
+                  class="role-select"
+                  :disabled="starting"
+                  placeholder="选择面试岗位"
                 >
-                  开始面试
-                </el-button>
-                <p v-if="!readyResumes.length" class="hint">上传并解析成功后即可开场。</p>
-              </el-col>
-            </el-row>
-          </el-form>
-        </el-card>
+                  <el-option
+                    v-for="role in TARGET_ROLES"
+                    :key="role"
+                    :label="role"
+                    :value="role"
+                  />
+                </el-select>
+              </el-form-item>
 
-        <el-card class="panel" shadow="never">
-          <template #header>已上传的简历</template>
+              <el-form-item label="面试难度" prop="difficulty">
+                <div class="levels">
+                  <button
+                    v-for="item in difficultyOptions"
+                    :key="item.value"
+                    type="button"
+                    class="level"
+                    :class="{ active: form.difficulty === item.value }"
+                    :disabled="starting"
+                    @click="form.difficulty = item.value"
+                  >
+                    <strong>{{ item.label }}</strong>
+                    <span>{{ item.desc }}</span>
+                  </button>
+                </div>
+              </el-form-item>
+            </div>
+
+            <el-form-item label="简历" prop="resumeId">
+              <div class="resume-row">
+                <div class="resume-pick">
+                  <div class="upload-icon"><el-icon><Files /></el-icon></div>
+                  <div class="upload-main">
+                    <strong>使用已上传的简历</strong>
+                    <el-select
+                      v-model="form.resumeId"
+                      class="resume-select"
+                      :placeholder="readyResumes.length ? '选择一份可用简历' : '暂无可用简历，请先上传'"
+                      :disabled="starting || !readyResumes.length"
+                    >
+                      <el-option
+                        v-for="item in readyResumes"
+                        :key="item.id"
+                        :label="item.original_filename"
+                        :value="item.id"
+                      />
+                    </el-select>
+                  </div>
+                </div>
+
+                <el-upload
+                  drag
+                  class="uploader"
+                  :show-file-list="false"
+                  :disabled="uploading || starting"
+                  accept=".pdf,.docx"
+                  :before-upload="beforeUpload"
+                  :http-request="onUpload"
+                >
+                  <div class="upload-box">
+                    <div class="upload-icon"><el-icon><Document /></el-icon></div>
+                    <div class="upload-main">
+                      <strong>
+                        {{ uploading ? '正在解析简历…' : '点击选择或拖入简历' }}
+                      </strong>
+                      <span>支持 PDF、DOCX，文件不超过 10MB</span>
+                    </div>
+                    <span class="upload-btn">选择文件</span>
+                  </div>
+                </el-upload>
+              </div>
+            </el-form-item>
+
+            <div class="setup-foot">
+              <span class="foot-note">
+                <el-icon><Check /></el-icon>
+                {{ starting ? '正在根据简历生成面试计划和第一问…' : '你的面试数据仅用于生成本次练习' }}
+              </span>
+              <button
+                type="submit"
+                class="start-btn"
+                :class="{ busy: starting }"
+                :disabled="!canStart"
+              >
+                <el-icon v-if="starting" class="is-loading"><Loading /></el-icon>
+                {{ starting ? '准备中' : '开始模拟面试' }}
+                <el-icon v-if="!starting"><ArrowRight /></el-icon>
+              </button>
+            </div>
+          </el-form>
+        </section>
+
+        <section class="resume-card">
+          <div class="resume-head">
+            <div>
+              <h3>我的简历</h3>
+              <p>已解析的简历可直接用于创建新的模拟面试</p>
+            </div>
+            <span v-if="resumes.length" class="resume-badge">只显示最近上传的三份简历</span>
+          </div>
+
           <el-table
             v-if="resumes.length"
-            :data="resumes"
-            highlight-current-row
-            :current-row-key="form.resumeId ?? undefined"
+            class="resume-table"
+            :data="recentResumes"
             row-key="id"
-            @row-click="selectResume"
           >
-            <el-table-column prop="original_filename" label="文件名" min-width="180" />
-            <el-table-column label="状态" width="120">
+            <el-table-column label="文件名称" min-width="260">
               <template #default="{ row }">
-                <el-tag :type="statusType[row.status] ?? 'info'" size="small">
-                  {{ statusLabel[row.status] ?? row.status }}
-                </el-tag>
+                <div class="file">
+                  <span class="file-type" :class="fileKind(row)">{{ fileLabel(row) }}</span>
+                  <span class="file-name">{{ row.original_filename }}</span>
+                </div>
               </template>
             </el-table-column>
-            <el-table-column label="上传时间" width="140">
+            <el-table-column label="解析状态" width="160">
               <template #default="{ row }">
-                {{ formatTime(row.created_at) }}
+                <span class="status" :class="row.status">
+                  <i />{{ statusLabel[row.status] ?? row.status }}
+                </span>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="120" fixed="right">
+            <el-table-column label="上传时间" width="180">
               <template #default="{ row }">
-                <el-button
+                <span class="upload-time">{{ formatTime(row.created_at) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="140" align="right">
+              <template #default="{ row }">
+                <button
                   v-if="row.status === 'ready'"
-                  type="primary"
-                  link
+                  type="button"
+                  class="row-start"
                   :disabled="starting"
-                  @click.stop="startInterview(row.id)"
+                  @click="startInterview(row.id)"
                 >
                   开始面试
-                </el-button>
+                </button>
                 <span v-else class="hint">无法开场</span>
               </template>
             </el-table-column>
@@ -318,7 +362,7 @@ onMounted(loadPage)
           <p v-if="resumes.length && !readyResumes.length" class="hint">
             当前没有解析成功的简历，请重新上传后再开场。
           </p>
-        </el-card>
+        </section>
       </div>
     </main>
   </div>
@@ -336,14 +380,6 @@ onMounted(loadPage)
   max-width: 1080px;
   margin: 0 auto;
 }
-.intro h1 {
-  margin: 0;
-  font-size: 26px;
-}
-.intro p {
-  margin: 8px 0 20px;
-  color: var(--el-text-color-secondary);
-}
 .ongoing {
   margin-bottom: 16px;
 }
@@ -353,25 +389,427 @@ onMounted(loadPage)
   justify-content: space-between;
   gap: 12px;
 }
-.panel {
+
+.resume-card {
+  overflow: hidden;
   margin-bottom: 16px;
-  border-radius: 12px;
+  background: #fff;
+  border-radius: 22px;
+  box-shadow: 0 8px 28px rgba(31, 42, 55, 0.06);
 }
-.card-header p {
-  margin: 4px 0 0;
-  font-size: 13px;
-  font-weight: 400;
+.resume-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 28px 18px;
+}
+.resume-head h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+.resume-head p {
+  margin: 6px 0 0;
+  font-size: 12px;
   color: var(--el-text-color-secondary);
 }
-.setup :deep(.el-upload) {
-  width: 100%;
-}
-.setup :deep(.el-upload-dragger) {
-  width: 100%;
-  padding: 28px 16px;
-}
-.upload-text {
+.resume-badge {
+  flex: none;
+  padding: 5px 12px;
+  font-size: 12px;
   color: var(--el-text-color-regular);
+  background: #f0f1f5;
+  border-radius: 999px;
+}
+.resume-table {
+  --el-table-header-text-color: var(--el-text-color-secondary);
+  --el-table-header-bg-color: #f8f9fb;
+}
+.resume-table :deep(th.el-table__cell) {
+  font-size: 12px;
+  font-weight: 500;
+}
+.resume-table :deep(td.el-table__cell) {
+  padding: 18px 0;
+}
+.resume-table :deep(th.el-table__cell:first-child .cell),
+.resume-table :deep(td.el-table__cell:first-child .cell) {
+  padding-left: 28px;
+}
+.resume-table :deep(th.el-table__cell:last-child .cell),
+.resume-table :deep(td.el-table__cell:last-child .cell) {
+  padding-right: 28px;
+}
+.file {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.file-type {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 8px;
+}
+.file-type.pdf {
+  color: #e2553f;
+  background: #fdeeec;
+}
+.file-type.docx {
+  color: #3b6fe0;
+  background: #e9f0fd;
+}
+.file-name {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--el-text-color-secondary);
+  background: #f0f1f5;
+  border-radius: 999px;
+}
+.status i {
+  width: 6px;
+  height: 6px;
+  background: currentColor;
+  border-radius: 50%;
+}
+.status.ready {
+  color: #16a34a;
+  background: #e8f8ee;
+}
+.status.failed {
+  color: #dc2626;
+  background: #fdecec;
+}
+.upload-time {
+  font-size: 14px;
+  color: var(--el-text-color-regular);
+}
+.row-start {
+  padding: 8px 16px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: #6d5df6;
+  background: #efedfe;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.row-start:hover:not(:disabled) {
+  background: #e2defd;
+}
+.row-start:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.resume-card > .hint {
+  margin: 0;
+  padding: 0 28px 18px;
+}
+
+.setup-card {
+  --accent: #6d5df6;
+  --accent-soft: #efedfe;
+  margin-bottom: 16px;
+  padding: 26px 28px 24px;
+  background: #fff;
+  border-radius: 22px;
+  box-shadow: 0 8px 28px rgba(31, 42, 55, 0.06);
+}
+.setup-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #f0f1f5;
+}
+.setup-head h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+}
+.setup-head p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.steps {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+.step {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.step-no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #f0f1f5;
+  border-radius: 50%;
+}
+.step.active,
+.step.done {
+  font-weight: 600;
+  color: var(--accent);
+}
+.step.active .step-no,
+.step.done .step-no {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.step-line {
+  width: 40px;
+  height: 1px;
+  background: #dcdfe6;
+}
+
+.setup {
+  margin-top: 22px;
+}
+.setup :deep(.el-form-item__label) {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--el-text-color-primary);
+}
+.setup-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+.role-select {
+  width: 100%;
+}
+.role-select :deep(.el-select__wrapper) {
+  min-height: 44px;
+  padding: 0 16px;
+  font-size: 15px;
+  border-radius: 12px;
+}
+.levels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+.level {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  text-align: left;
+  font-family: inherit;
+  background: #fff;
+  border: 1px solid #e4e7ed;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.level strong {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+}
+.level span {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.level:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.level.active {
+  background: #f6f5ff;
+  border-color: var(--accent);
+}
+.level.active strong {
+  color: var(--accent);
+}
+.level:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.resume-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  width: 100%;
+}
+.resume-pick {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 86px;
+  padding: 0 18px;
+  border: 1px solid #e4e7ed;
+  border-radius: 14px;
+  box-sizing: border-box;
+}
+.resume-select {
+  width: 100%;
+}
+.uploader {
+  width: 100%;
+}
+.uploader :deep(.el-upload),
+.uploader :deep(.el-upload-dragger) {
+  width: 100%;
+  height: 100%;
+}
+.uploader :deep(.el-upload-dragger) {
+  display: flex;
+  align-items: center;
+  min-height: 86px;
+  padding: 0 18px;
+  box-sizing: border-box;
+  background: #fff;
+  border: 1px dashed #dcdfe6;
+  border-radius: 14px;
+}
+.uploader :deep(.el-upload-dragger:hover),
+.uploader :deep(.el-upload-dragger.is-dragover) {
+  border-color: var(--accent);
+  background: #fbfaff;
+}
+.upload-box {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 16px;
+  text-align: left;
+}
+.upload-icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  font-size: 20px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 12px;
+}
+.upload-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.upload-main strong {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+}
+.upload-main span {
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.upload-btn {
+  flex: none;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+}
+
+.setup-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 8px;
+  padding-top: 20px;
+  border-top: 1px solid #f0f1f5;
+}
+.foot-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.foot-note .el-icon {
+  color: #16a34a;
+}
+.start-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 26px;
+  min-height: 48px;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 8px 20px rgba(109, 93, 246, 0.3);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.start-btn:hover:not(:disabled) {
+  background: #5b4be8;
+}
+.start-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  box-shadow: none;
+}
+.start-btn.busy:disabled {
+  cursor: progress;
+  opacity: 0.85;
+}
+
+@media (max-width: 760px) {
+  .setup-row {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .resume-row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .setup-head,
+  .setup-foot {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
 .hint {
   margin: 12px 0 0;
