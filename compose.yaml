@@ -7,7 +7,7 @@ services:
 
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-trip_plan}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-interview}
       MYSQL_USER: ${MYSQL_USER:?MYSQL_USER is required}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}
       TZ: ${TZ:-Asia/Shanghai}
@@ -16,6 +16,10 @@ services:
       - mysqld
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_0900_ai_ci
+      - --innodb-buffer-pool-size=${MYSQL_INNODB_BUFFER_POOL_SIZE:-128M}
+      - --performance-schema=OFF
+
+    mem_limit: ${MYSQL_MEM_LIMIT:-512m}
 
     ports:
       - "127.0.0.1:${MYSQL_PORT:-3306}:3306"
@@ -56,9 +60,11 @@ services:
       - --appendfsync
       - everysec
       - --maxmemory
-      - ${REDIS_MAXMEMORY:-256mb}
+      - ${REDIS_MAXMEMORY:-64mb}
       - --maxmemory-policy
       - allkeys-lru
+
+    mem_limit: ${REDIS_MEM_LIMIT:-96m}
 
     ports:
       - "127.0.0.1:${REDIS_PORT:-6379}:6379"
@@ -79,12 +85,63 @@ services:
     networks:
       - app_net
 
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: "3306"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      RESUME_UPLOAD_DIR: /app/backend/uploads
+    volumes:
+      - resume_uploads:/app/backend/uploads
+    mem_limit: ${BACKEND_MEM_LIMIT:-512m}
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=5)'
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 180s
+    networks:
+      - app_net
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    mem_limit: ${FRONTEND_MEM_LIMIT:-64m}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - app_net
+
 volumes:
   mysql_data:
     name: interview_mysql_data
 
   redis_data:
     name: interview_redis_data
+
+  resume_uploads:
+    name: interview_resume_uploads
 
 networks:
   app_net:

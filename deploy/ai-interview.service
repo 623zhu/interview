@@ -1,0 +1,22 @@
+# 复制到 /etc/systemd/system/ai-interview.service
+# 把 User、路径改成服务器上的实际值后：
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now ai-interview
+
+[Unit]
+Description=AI Interview API
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/ai-interview/backend
+Environment=PATH=/opt/ai-interview/backend/.venv/bin
+ExecStart=/opt/ai-interview/backend/.venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

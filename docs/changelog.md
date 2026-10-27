@@ -33,6 +33,7 @@
 - 新增 `POST /api/v1/users/session/refresh`：用刷新令牌换发新的访问令牌和刷新令牌，旧刷新令牌立即失效。不需要 `Authorization`。
 - 面试记录页接入 `GET /api/v1/interview-sessions`。可按状态筛选，点进详情看问答和报告；进行中的场次可继续作答。
 - 后端启动后向标准输出写面试处理日志：创建场次、每轮结果、评估/出题重试，以及计划生成、简历解析、提交回答和发送验证码失败。不含回答原文和简历正文。
+- `compose.yaml` 增加 backend、frontend 服务。`docker compose up -d --build` 一次拉起 MySQL、Redis、API 和前端。
 
 ### Fixed
 
@@ -60,7 +61,7 @@
 - 种子数据：迁移完成后在 `backend/` 执行 `python scripts/import_topic_cards.py`，读取 `backend/data/topic_cards/*.json`，按 `key` upsert。当前 372 张（`mysql.json` 70、`redis.json` 62、`java.json` 36、`jvm.json` 32、`spring.json` 33、`agent.json` 54、`python.json` 69、`rag.json` 10，其余按主题分文件）。跨文件 `key` 重复会导入失败。已有相同 `key` 且正文未变则跳过。
 - 依赖：`backend/requirements.txt` 增加 `langgraph>=0.2.45`。进程启动时 `compile()` `turn_graph`，挂到 `app.state`。
 - 回滚：`alembic downgrade -1` 会删除当前 head 对应的表及其数据。
-- 配置变更：无。LangSmith 接入时再增加追踪相关环境变量。
+- 配置变更：`compose.yaml` 中 MySQL 默认库名从 `trip_plan` 改为 `interview`，与 `.env.example` 一致。未设置 `MYSQL_DATABASE` 时生效。已有数据卷不会改名，需在库内自行 `CREATE DATABASE interview` 或沿用原库名。MySQL 默认 `innodb_buffer_pool_size=128M`、容器内存上限 512m，Redis 默认 `maxmemory=64mb`、容器内存上限 96m，供 2G 云主机使用。`compose.yaml` 增加 `backend` 与 `frontend`：启动时自动 `alembic upgrade head` 并导入考点卡；Nginx 容器对外提供 80 端口并反代 API。全栈命令为 `docker compose up -d --build`。本机若只跑数据库：`docker compose up -d mysql redis`。宿主机 Nginx / systemd 配置仍在 `deploy/nginx.conf` 与 `deploy/ai-interview.service`。LangSmith 接入时再增加追踪相关环境变量。
 
 ## [版本号] 
 

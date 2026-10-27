@@ -1,0 +1,12 @@
+.git
+.cursor
+**/.venv
+**/node_modules
+**/__pycache__
+**/*.py[cod]
+frontend/dist
+.env
+.env.*
+!.env.example
+logs
+*.log

@@ -25,4 +25,4 @@
 | 配置 | `backend/app/core/config.py`，环境变量在仓库根目录 `.env` |
 | MySQL、Redis | `backend/app/infrastructure/` |
 | 迁移 | `backend/alembic/` |
-| 容器 | `compose.yaml` |
+| 容器 | `compose.yaml`（MySQL、Redis、backend、frontend）；镜像定义在 `backend/Dockerfile`、`frontend/Dockerfile` |
