@@ -43,7 +43,6 @@ async function onSubmit() {
   <main class="page">
     <div class="panel">
       <h1>欢迎回来</h1>
-      <p class="subtitle">登陆智面,早日通过面试</p>
 
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="onSubmit">
         <el-form-item label="邮箱" prop="email">
@@ -86,12 +85,8 @@ async function onSubmit() {
   box-shadow: 0 12px 40px rgba(31, 42, 55, 0.12);
 }
 h1 {
-  margin: 0;
+  margin: 0 0 18px;
   font-size: 26px;
-}
-.subtitle {
-  margin: 6px 0 18px;
-  color: var(--el-text-color-secondary);
 }
 .row {
   display: flex;
