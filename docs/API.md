@@ -495,7 +495,7 @@ Authorization: Bearer <access_token>
 
 没有待答轮次、场次已结束或已放弃返回 `409`。场次不存在或不属于当前用户返回 `404`。空回答返回 `422`。评估或出题失败返回 `500`，文案「处理本轮回答失败」。
 
-请求头 `Accept` 包含 `text/event-stream` 时，同一路径改为 SSE。先校验场次能否作答：不存在仍返回 `404`，无法作答仍返回 `409`。通过后响应 `200`，`Content-Type` 为 `text/event-stream`。评估阶段先发 `status`，出题时按 token 发 `delta`，落库后再发 `done`。图仍在一次请求内跑完，不保存跨请求状态。
+请求头 `Accept` 包含 `text/event-stream` 时，同一路径改为 SSE。先校验场次能否作答：不存在仍返回 `404`，无法作答仍返回 `409`。通过后响应 `200`，`Content-Type` 为 `text/event-stream`。评估阶段先发 `status`，出题时模型 token 到达即发 `delta`，落库后再发 `done`。图仍在一次请求内跑完，不保存跨请求状态。
 
 ```
 event: status
@@ -544,7 +544,7 @@ data: {"detail":"处理本轮回答失败"}
 4. 循环 `POST /api/v1/interview-sessions/{id}/turns` 提交回答，直到 `status=completed`。前端对话页带 `Accept: text/event-stream` 流式接收下一问。中途结束则 `PATCH /api/v1/interview-sessions/{id}`，`status` 为 `abandoned`。
 5. `GET /api/v1/interview-sessions` 查看自己的场次列表；`GET /api/v1/interview-sessions/{id}` 查看某一场问答。结束后还可看各轮点评、分数和报告。进行中也可看每次 turns 响应里的 `current_turn`。
 
-每一次提交回答对应一次 `turn_graph.ainvoke`。出题节点对模型走流式调用；SSE 把 token 推给客户端，JSON 调用仍等整题生成完再返回。创建场次目前走 service，语义与计划中的 `plan_graph` 相同。编排说明见 `docs/interview-design.md`。
+每一次提交回答对应一次 `turn_graph.ainvoke`。出题节点对模型走流式调用；SSE 把 token 即时推给客户端，JSON 调用仍等整题生成完再返回。创建场次目前走 service，语义与计划中的 `plan_graph` 相同。编排说明见 `docs/interview-design.md`。
 
 ## 待补充内容
 

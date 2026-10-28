@@ -16,6 +16,7 @@ import AppHeader from '@/components/AppHeader.vue'
 type ChatRole = 'interviewer' | 'user'
 
 interface ChatMessage {
+  uid: string
   id: string
   role: ChatRole
   text: string
@@ -62,8 +63,12 @@ const stageLabel: Record<string, string> = {
 let abortStream: AbortController | null = null
 let typewriterToken = 0
 let dripGen = 0
-let dripBuffer = ''
-let dripping = false
+let messageUid = 0
+
+function nextMessageUid(prefix: string) {
+  messageUid += 1
+  return `${prefix}-${messageUid}`
+}
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -81,12 +86,14 @@ function messagesFromSession(detail: InterviewSessionDetail): ChatMessage[] {
   const items: ChatMessage[] = []
   for (const turn of detail.turns) {
     items.push({
+      uid: `q-${turn.seq}`,
       id: `q-${turn.seq}`,
       role: 'interviewer',
       text: turn.question,
     })
     if (turn.answer) {
       items.push({
+        uid: `a-${turn.seq}`,
         id: `a-${turn.seq}`,
         role: 'user',
         text: turn.answer,
@@ -97,6 +104,7 @@ function messagesFromSession(detail: InterviewSessionDetail): ChatMessage[] {
   }
   if (detail.current_question) {
     items.push({
+      uid: 'pending',
       id: 'pending',
       role: 'interviewer',
       text: detail.current_question,
@@ -116,6 +124,7 @@ function liveMessage() {
 function ensureLiveMessage() {
   if (!liveMessage()) {
     messages.value.push({
+      uid: nextMessageUid('live'),
       id: 'live',
       role: 'interviewer',
       text: '',
@@ -127,55 +136,22 @@ function ensureLiveMessage() {
 function enqueueDrip(text: string, gen: number) {
   if (!text || gen !== dripGen) return
   thinking.value = false
-  dripBuffer += text
   ensureLiveMessage()
-  if (!dripping) {
-    dripping = true
-    void runDrip(gen)
+  const live = liveMessage()
+  if (live) {
+    live.text += text
   }
-}
-
-async function runDrip(gen: number) {
-  try {
-    while (dripBuffer.length && gen === dripGen) {
-      const chunk = dripBuffer.slice(0, 1)
-      dripBuffer = dripBuffer.slice(1)
-      const live = liveMessage()
-      if (live) {
-        live.text += chunk
-      }
-      await scrollToBottom()
-      await sleep(18)
-    }
-  } finally {
-    if (gen === dripGen) {
-      dripping = false
-      if (dripBuffer.length) {
-        dripping = true
-        void runDrip(gen)
-      }
-    }
-  }
+  void scrollToBottom()
 }
 
 async function finishDrip(gen: number, finalText?: string | null) {
   const live = liveMessage()
-  if (finalText) {
-    const current = live?.text ?? ''
-    if (!current) {
-      enqueueDrip(finalText, gen)
-    } else if (finalText.startsWith(current) && finalText.length > current.length) {
-      enqueueDrip(finalText.slice(current.length), gen)
-    }
-  }
-  while (gen === dripGen && (dripping || dripBuffer.length)) {
-    await sleep(16)
+  const current = live?.text ?? ''
+  if (finalText && !current) {
+    enqueueDrip(finalText, gen)
   }
   const done = liveMessage()
   if (done && gen === dripGen) {
-    if (finalText) {
-      done.text = finalText
-    }
     done.streaming = false
   }
 }
@@ -214,6 +190,7 @@ async function loadSession() {
       typingIntro.value = true
       messages.value = messagesFromSession({ ...detail, current_question: '' })
       messages.value.push({
+        uid: 'pending',
         id: 'pending',
         role: 'interviewer',
         text: '',
@@ -261,6 +238,7 @@ async function onSubmit() {
 
   const seq = nextUserSeq()
   messages.value.push({
+    uid: `a-${seq}`,
     id: `a-${seq}`,
     role: 'user',
     text,
@@ -270,8 +248,6 @@ async function onSubmit() {
   thinking.value = true
   dripGen += 1
   const gen = dripGen
-  dripBuffer = ''
-  dripping = false
   await scrollToBottom()
 
   abortStream?.abort()
@@ -371,87 +347,89 @@ onUnmounted(() => {
     <AppHeader />
 
     <main v-loading="loading" class="main">
-      <div v-if="session" class="stage">
-        <div class="intro">
-          <div>
-            <h1>{{ session.target_role }}</h1>
-            <p>
-              {{ difficultyLabel[session.difficulty] ?? session.difficulty }}
-              ·
-              {{ session.status === 'in_progress' ? '进行中' : session.status === 'completed' ? '已完成' : '已结束' }}
-            </p>
+      <div v-if="session" class="session">
+        <section class="chat-panel" :class="{ ended: !inProgress }">
+          <div class="intro">
+            <div>
+              <h1>{{ session.target_role }}</h1>
+              <p>
+                {{ difficultyLabel[session.difficulty] ?? session.difficulty }}
+                ·
+                {{ session.status === 'in_progress' ? '进行中' : session.status === 'completed' ? '已完成' : '已结束' }}
+              </p>
+            </div>
+            <div class="intro-actions">
+              <el-button @click="router.push(inProgress ? '/interview' : '/records')">
+                {{ inProgress ? '返回设置' : '返回记录' }}
+              </el-button>
+              <el-button
+                v-if="inProgress"
+                :loading="abandoning"
+                @click="onAbandon"
+              >
+                结束本场
+              </el-button>
+            </div>
           </div>
-          <div class="intro-actions">
-            <el-button @click="router.push(inProgress ? '/interview' : '/records')">
-              {{ inProgress ? '返回设置' : '返回记录' }}
-            </el-button>
-            <el-button
-              v-if="inProgress"
-              :loading="abandoning"
-              @click="onAbandon"
+
+          <div ref="threadRef" class="thread">
+            <div
+              v-for="item in messages"
+              :key="item.uid"
+              class="row"
+              :class="item.role"
             >
-              结束本场
+              <div class="avatar">{{ item.role === 'interviewer' ? '面' : '我' }}</div>
+              <div class="col">
+                <div class="bubble" :class="{ streaming: item.streaming }">
+                  {{ item.text }}<span v-if="item.streaming" class="caret" />
+                </div>
+                <p v-if="item.comment" class="meta">{{ item.comment }}</p>
+              </div>
+            </div>
+
+            <div v-if="thinking" class="row interviewer">
+              <div class="avatar">面</div>
+              <div class="bubble thinking">
+                <span class="dot" />
+                <span class="dot" />
+                <span class="dot" />
+              </div>
+            </div>
+
+            <div v-if="session.report" class="report">
+              <div class="report-title">本场报告</div>
+              <p class="score">总分 {{ session.report.score }}</p>
+              <div v-if="session.report.stages.length" class="stages">
+                <span v-for="item in session.report.stages" :key="item.kind" class="chip">
+                  {{ stageLabel[item.kind] ?? item.kind }} {{ item.score }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="inProgress" class="composer">
+            <el-input
+              v-model="answer"
+              type="textarea"
+              :rows="3"
+              maxlength="8000"
+              show-word-limit
+              resize="none"
+              :disabled="submitting || typingIntro"
+              placeholder="结合简历和刚才的问题作答，Enter 发送，Shift+Enter 换行"
+              @keydown="onComposerKeydown"
+            />
+            <el-button
+              type="primary"
+              :loading="submitting"
+              :disabled="!canSend"
+              @click="onSubmit"
+            >
+              发送
             </el-button>
           </div>
-        </div>
-
-        <div ref="threadRef" class="thread">
-          <div
-            v-for="item in messages"
-            :key="item.id"
-            class="row"
-            :class="item.role"
-          >
-            <div class="avatar">{{ item.role === 'interviewer' ? '面' : '我' }}</div>
-            <div class="col">
-              <div class="bubble" :class="{ streaming: item.streaming }">
-                {{ item.text }}<span v-if="item.streaming" class="caret" />
-              </div>
-              <p v-if="item.comment" class="meta">{{ item.comment }}</p>
-            </div>
-          </div>
-
-          <div v-if="thinking" class="row interviewer">
-            <div class="avatar">面</div>
-            <div class="bubble thinking">
-              <span class="dot" />
-              <span class="dot" />
-              <span class="dot" />
-            </div>
-          </div>
-
-          <div v-if="session.report" class="report">
-            <div class="report-title">本场报告</div>
-            <p class="score">总分 {{ session.report.score }}</p>
-            <div v-if="session.report.stages.length" class="stages">
-              <span v-for="item in session.report.stages" :key="item.kind" class="stage">
-                {{ stageLabel[item.kind] ?? item.kind }} {{ item.score }}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="inProgress" class="composer">
-          <el-input
-            v-model="answer"
-            type="textarea"
-            :rows="3"
-            maxlength="8000"
-            show-word-limit
-            resize="none"
-            :disabled="submitting || typingIntro"
-            placeholder="结合简历和刚才的问题作答，Enter 发送，Shift+Enter 换行"
-            @keydown="onComposerKeydown"
-          />
-          <el-button
-            type="primary"
-            :loading="submitting"
-            :disabled="!canSend"
-            @click="onSubmit"
-          >
-            发送
-          </el-button>
-        </div>
+        </section>
       </div>
     </main>
   </div>
@@ -470,25 +448,37 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
 }
-.stage {
+.session {
   flex: 1;
   min-height: 0;
-  width: min(100%, 860px);
+  width: min(100%, 960px);
   margin: 0 auto;
   padding: 20px 24px 24px;
   display: flex;
   flex-direction: column;
+}
+.chat-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #fff;
+  border-radius: 22px;
+  box-shadow: 0 8px 28px rgba(31, 42, 55, 0.06);
 }
 .intro {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 16px;
+  flex-shrink: 0;
+  padding: 18px 22px 16px;
+  border-bottom: 1px solid #eef2f6;
 }
 .intro h1 {
   margin: 0;
-  font-size: 22px;
+  font-size: 20px;
 }
 .intro p {
   margin: 6px 0 0;
@@ -502,7 +492,10 @@ onUnmounted(() => {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 8px 4px 24px;
+  padding: 20px 22px 12px;
+}
+.chat-panel.ended .thread {
+  padding-bottom: 24px;
 }
 .row {
   display: flex;
@@ -539,8 +532,7 @@ onUnmounted(() => {
   line-height: 1.65;
   white-space: pre-wrap;
   word-break: break-word;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  background: #f4f7fb;
 }
 .row.user .bubble {
   background: #1677ff;
@@ -585,10 +577,10 @@ onUnmounted(() => {
   line-height: 1.5;
 }
 .report {
-  margin: 8px 0 16px;
+  margin: 8px 0 8px;
   padding: 16px 18px;
-  background: #fff;
-  border-radius: 12px;
+  background: #f8fafc;
+  border-radius: 14px;
 }
 .report-title {
   color: var(--el-text-color-secondary);
@@ -605,7 +597,7 @@ onUnmounted(() => {
   gap: 8px;
   margin-top: 12px;
 }
-.stage {
+.chip {
   padding: 4px 10px;
   border-radius: 999px;
   background: #f1f5f9;
@@ -614,19 +606,36 @@ onUnmounted(() => {
 }
 .composer {
   display: flex;
+  flex-shrink: 0;
   gap: 12px;
   align-items: flex-end;
+  margin: 8px 16px 16px;
   padding: 12px;
-  background: #fff;
+  background: #f8fafc;
+  border: 1px solid #e8edf3;
   border-radius: 16px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
 }
 .composer :deep(.el-textarea) {
   flex: 1;
 }
 .composer :deep(.el-textarea__inner) {
   box-shadow: none;
-  background: #f8fafc;
+  background: transparent;
+}
+.composer :deep(.el-button) {
+  height: 40px;
+}
+@media (max-width: 640px) {
+  .session {
+    padding: 12px 12px 16px;
+  }
+  .intro {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .col {
+    max-width: min(86%, 560px);
+  }
 }
 @keyframes pulse {
   0%,

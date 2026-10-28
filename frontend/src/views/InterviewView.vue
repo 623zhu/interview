@@ -29,7 +29,7 @@ const activeSession = ref<InterviewSessionListItem | null>(null)
 
 function roleFromQuery(): TargetRole {
   const role = route.query.role
-  return TARGET_ROLES.find((item) => item === role) ?? 'Java 后端'
+  return TARGET_ROLES.find((item) => item === role) ?? 'Python 后端'
 }
 
 const form = reactive({

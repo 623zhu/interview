@@ -397,8 +397,8 @@ async def _stream_llm_question(
 ) -> str:
     last_error: Exception | None = None
     for attempt in range(ASK_RETRY + 1):
-        sent_any = False
         collected: list[str] = []
+        sent_any = False
         try:
             await _emit_sse(config, "status", {"phase": "asking"})
             stream = await llm_client.chat.completions.create(

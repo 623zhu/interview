@@ -200,7 +200,7 @@ class TurnEvaluation(BaseModel):
 
 ### 3. 出题时模型只负责说话
 
-`ask` 节点只生成问题，对 `llm_model_light` 使用流式输出，只吐问题原文，不再包 JSON。输入包括：当前考点、这次动作、最近 2～3 轮、相关考点卡或简历锚点、`probe_path` 里对应深度。`POST /turns` 在 `Accept: text/event-stream` 时把 token 写成 SSE `delta`；评估仍先跑完。`persist` 仍在整题生成之后。第一问是模板，由前端打字机展示。
+`ask` 节点只生成问题，对 `llm_model_light` 使用流式输出，只吐问题原文，不再包 JSON。输入包括：当前考点、这次动作、最近 2～3 轮、相关考点卡或简历锚点、`probe_path` 里对应深度。`POST /turns` 在 `Accept: text/event-stream` 时把模型 token 即时写成 SSE `delta`；评估仍先跑完。`persist` 仍在整题生成之后。第一问是模板，由前端打字机展示。
 
 问题素材有三个来源：
 

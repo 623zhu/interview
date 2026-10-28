@@ -21,7 +21,7 @@ const RING_LENGTH = 2 * Math.PI * RING_RADIUS
 const router = useRouter()
 const loading = ref(false)
 const sessions = ref<InterviewSessionListItem[]>([])
-const targetRole = ref<TargetRole>('Java 后端')
+const targetRole = ref<TargetRole>('Python 后端')
 
 const stageMeta: { kind: ScoredStageKind; label: string; color: string; advice: string }[] = [
   {

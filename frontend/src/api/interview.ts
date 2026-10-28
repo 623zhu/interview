@@ -5,10 +5,10 @@ import { useAuthStore } from '@/stores/auth'
 export const TYPEWRITER_SESSION_KEY = 'ai-interview-typewriter'
 
 export type Difficulty = 'easy' | 'medium' | 'hard'
-export type TargetRole = 'Java 后端' | 'Python 后端' | 'AI Agent'
+export type TargetRole = 'Python 后端' | 'Java 后端' | 'AI Agent'
 export type SessionStatus = 'planned' | 'in_progress' | 'completed' | 'abandoned'
 
-export const TARGET_ROLES: TargetRole[] = ['Java 后端', 'Python 后端', 'AI Agent']
+export const TARGET_ROLES: TargetRole[] = ['Python 后端', 'Java 后端', 'AI Agent']
 
 export type ScoredStageKind = 'project_probe' | 'fundamentals' | 'scenario'
 
