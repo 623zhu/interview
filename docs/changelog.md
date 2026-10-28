@@ -33,6 +33,7 @@
 - 新增 `POST /api/v1/users/session/refresh`：用刷新令牌换发新的访问令牌和刷新令牌，旧刷新令牌立即失效。不需要 `Authorization`。
 - 面试记录页接入 `GET /api/v1/interview-sessions`。可按状态筛选，点进详情看问答和报告；进行中的场次可继续作答。
 - 后端启动后向标准输出写面试处理日志：创建场次、每轮结果、评估/出题重试，以及计划生成、简历解析、提交回答和发送验证码失败。不含回答原文和简历正文。
+- 发送注册或重置密码验证码时按 Redis 限流：同一邮箱 60 秒内只能发一次，同一 IP 10 分钟最多 10 次。超限返回 `429`，不发送邮件。
 - `compose.yaml` 增加 backend、frontend 服务。`docker compose up -d --build` 一次拉起 MySQL、Redis、API 和前端。
 
 ### Fixed

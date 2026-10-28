@@ -204,6 +204,8 @@ erDiagram
 | --- | --- | --- |
 | `register:code:{email}` | 注册验证码 | 5 分钟 |
 | `reset:code:{email}` | 重置密码验证码 | 5 分钟 |
+| `verify:limit:email:{email}` | 发验证码：同一邮箱冷却 | 60 秒 |
+| `verify:limit:ip:{ip}` | 发验证码：同一 IP 计数，10 分钟最多 10 次 | 10 分钟 |
 | `token:refresh:{user_id}` | 当前有效的刷新令牌 | `JWT_REFRESH_TOKEN_EXPIRES_DAYS` |
 
 ## 索引
@@ -236,7 +238,7 @@ erDiagram
 ## 数据安全与保留
 
 - 密码只存哈希，不明文存储。
-- 验证码和刷新令牌只在 Redis，响应中不返回验证码。
+- 验证码、发码限流和刷新令牌只在 Redis，响应中不返回验证码。
 - 简历原文、结构化资料和面试回答含个人信息，接口按属主隔离。
 - 访问权限和最小权限角色：待补充。
 - 备份频率、保留周期和恢复演练：待补充。

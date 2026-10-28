@@ -64,6 +64,9 @@ async function sendCode() {
     startCountdown()
   } catch (error) {
     ElMessage.error(error instanceof ApiError ? error.message : '验证码发送失败')
+    if (error instanceof ApiError && error.status === 429) {
+      startCountdown()
+    }
   } finally {
     sending.value = false
   }

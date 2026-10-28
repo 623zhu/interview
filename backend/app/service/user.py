@@ -1,17 +1,20 @@
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import User
-from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 import secrets
 from pwdlib import PasswordHash
 from email.message import EmailMessage
 from app.core.config import settings
+from app.core.logging import get_logger
+from app.infrastructure.rate_limit import RateLimitError, acquire_verification_send_quota
 import aiosmtplib
 from datetime import datetime, timedelta, timezone
 import jwt
 from dataclasses import dataclass
+
+logger = get_logger()
 
 password_hash = PasswordHash.recommended()
 
@@ -61,7 +64,13 @@ async def create_user_service(
 async def send_verify_email_service(
     email: str,
     redis: Redis,
+    ip: str,
 ) -> None:
+    try:
+        await acquire_verification_send_quota(redis, email, ip)
+    except RateLimitError:
+        logger.warning("register code rate limited email=%s ip=%s", email, ip)
+        raise
     code = f"{secrets.randbelow(1_000_000):06d}"
     code_key = f"register:code:{email}"
     await redis.set(code_key, code, ex=60 * 5)
@@ -104,7 +113,13 @@ async def send_reset_password_verification_code_service(
     email: str,
     redis: Redis,
     session: AsyncSession,
+    ip: str,
 ) -> None:
+    try:
+        await acquire_verification_send_quota(redis, email, ip)
+    except RateLimitError:
+        logger.warning("reset code rate limited email=%s ip=%s", email, ip)
+        raise
     result = await session.execute(select(User).where(User.email == email))
     if result.scalar_one_or_none() is None:
         raise UserNotFoundError

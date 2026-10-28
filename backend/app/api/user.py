@@ -7,6 +7,7 @@ from app.schemas.user import (
     LogoutRequest,RefreshTokenRequest
 )
 
+from app.infrastructure.rate_limit import RateLimitError
 from app.service.user import (
     create_user_service,login_user_service,reset_password_service,
     send_verify_email_service,send_reset_password_verification_code_service,logout_user_service,
@@ -18,6 +19,17 @@ from app.service.user import (
 
 router = APIRouter(prefix="/api/v1/users",tags=["users"])
 logger = get_logger()
+
+RATE_LIMIT_DETAIL = "发送过于频繁，请稍后再试"
+
+
+def client_ip(request: Request) -> str:
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip and real_ip.strip():
+        return real_ip.strip()
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
 
 @router.post(
     "",
@@ -45,15 +57,21 @@ async def create_user(body:UserCreateRequest,request:Request)-> UserCreateRespon
     "/verification-codes",
     status_code=status.HTTP_201_CREATED,
     summary="邮箱注册码",
-    description="发送邮箱注册验证码",
+    description="发送邮箱注册验证码。同一邮箱 60 秒内、同一 IP 10 分钟内超过 10 次返回 429。",
 )
 async def create_user_verify_email(body:UserVerifyEmailRequest,request:Request):
     try:
         await send_verify_email_service(
             body.email,
             request.app.state.redis_client,
+            client_ip(request),
         )
         return {}
+    except RateLimitError:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=RATE_LIMIT_DETAIL,
+        )
     except Exception:
         logger.exception("send verification code failed")
         raise HTTPException(
@@ -103,7 +121,7 @@ async def reset_password(body:ResetPasswordRequest,request:Request)->ResetPasswo
 @router.post(
     "/password-reset/verification-codes",
     summary="重置密码验证码",
-    description="发送重置密码验证码",
+    description="发送重置密码验证码。同一邮箱 60 秒内、同一 IP 10 分钟内超过 10 次返回 429。",
     status_code=status.HTTP_201_CREATED,
 )
 async def send_reset_password_verification_code(body:ResetPasswordVerificationCodeRequest,request:Request):
@@ -112,7 +130,13 @@ async def send_reset_password_verification_code(body:ResetPasswordVerificationCo
             await send_reset_password_verification_code_service(
                 body.email,
                 request.app.state.redis_client,
-                session
+                session,
+                client_ip(request),
+            )
+    except RateLimitError:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=RATE_LIMIT_DETAIL,
         )
     except UserNotFoundError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,detail="用户不存在")
