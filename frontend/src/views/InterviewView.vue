@@ -1,3 +1,27 @@
+<script lang="ts">
+import {
+  createInterviewSession,
+  type Difficulty,
+  type InterviewSessionCreateResponse,
+  type TargetRole,
+} from '@/api/interview'
+
+let inflightCreate: Promise<InterviewSessionCreateResponse> | null = null
+
+function startSessionCreate(body: {
+  resume_id: number
+  target_role: TargetRole
+  difficulty: Difficulty
+}) {
+  if (!inflightCreate) {
+    inflightCreate = createInterviewSession(body).finally(() => {
+      inflightCreate = null
+    })
+  }
+  return inflightCreate
+}
+</script>
+
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -7,7 +31,6 @@ import { ArrowRight, Check, Document, Files, Loading } from '@element-plus/icons
 import { listResumes, uploadResume, type ResumeListItem } from '@/api/resume'
 import {
   TARGET_ROLES,
-  createInterviewSession,
   listInterviewSessions,
   markSessionTypewriter,
   type Difficulty,
@@ -18,12 +41,21 @@ import { ApiError } from '@/api/http'
 import AppHeader from '@/components/AppHeader.vue'
 import { formatDate } from '@/utils/datetime'
 
+const PREPARING_KEY = 'ai-interview-preparing'
+const PREPARING_TTL_MS = 5 * 60 * 1000
+
+type PreparingState = {
+  resume_id: number
+  target_role: TargetRole
+  difficulty: Difficulty
+  started_at: number
+}
+
 const route = useRoute()
 const router = useRouter()
 const formRef = ref<FormInstance>()
 const loading = ref(false)
 const uploading = ref(false)
-const starting = ref(false)
 const resumes = ref<ResumeListItem[]>([])
 const activeSession = ref<InterviewSessionListItem | null>(null)
 
@@ -32,10 +64,55 @@ function roleFromQuery(): TargetRole {
   return TARGET_ROLES.find((item) => item === role) ?? 'Python 后端'
 }
 
+function readPreparing(): PreparingState | null {
+  try {
+    const raw = sessionStorage.getItem(PREPARING_KEY)
+    if (!raw) return null
+    const saved = JSON.parse(raw) as PreparingState
+    const valid =
+      typeof saved?.resume_id === 'number' &&
+      TARGET_ROLES.includes(saved.target_role) &&
+      (saved.difficulty === 'easy' || saved.difficulty === 'medium' || saved.difficulty === 'hard') &&
+      typeof saved.started_at === 'number' &&
+      Date.now() - saved.started_at <= PREPARING_TTL_MS
+    if (!valid) {
+      sessionStorage.removeItem(PREPARING_KEY)
+      return null
+    }
+    return saved
+  } catch {
+    return null
+  }
+}
+
+const savedPreparing = readPreparing()
+const starting = ref(Boolean(savedPreparing))
+
+function writePreparing(state: Omit<PreparingState, 'started_at'>) {
+  try {
+    sessionStorage.setItem(
+      PREPARING_KEY,
+      JSON.stringify({ ...state, started_at: Date.now() } satisfies PreparingState),
+    )
+  } catch {
+    // keep in-memory preparing state
+  }
+  starting.value = true
+}
+
+function clearPreparing() {
+  try {
+    sessionStorage.removeItem(PREPARING_KEY)
+  } catch {
+    // ignore
+  }
+  starting.value = false
+}
+
 const form = reactive({
-  resumeId: null as number | null,
-  targetRole: roleFromQuery(),
-  difficulty: 'medium' as Difficulty,
+  resumeId: savedPreparing?.resume_id ?? (null as number | null),
+  targetRole: savedPreparing?.target_role ?? roleFromQuery(),
+  difficulty: (savedPreparing?.difficulty ?? 'medium') as Difficulty,
 })
 
 const rules: FormRules = {
@@ -72,7 +149,7 @@ function fileLabel(row: ResumeListItem) {
 }
 
 async function loadPage() {
-  loading.value = true
+  if (!starting.value) loading.value = true
   try {
     const [resumeList, inProgress] = await Promise.all([
       listResumes(),
@@ -80,6 +157,7 @@ async function loadPage() {
     ])
     resumes.value = resumeList
     activeSession.value = inProgress[0] ?? null
+    if (starting.value) return
     if (form.resumeId && !readyResumes.value.some((item) => item.id === form.resumeId)) {
       form.resumeId = null
     }
@@ -131,25 +209,43 @@ async function onUpload({ file }: UploadRequestOptions) {
   }
 }
 
-async function startInterview(resumeId = form.resumeId) {
-  if (resumeId) form.resumeId = resumeId
-  const valid = await formRef.value?.validate().catch(() => false)
-  if (!valid || !form.resumeId) return
-
-  starting.value = true
-  try {
-    const session = await createInterviewSession({
-      resume_id: form.resumeId,
+async function finishStart() {
+  const resumeId = form.resumeId
+  if (!resumeId) {
+    clearPreparing()
+    return
+  }
+  if (!readPreparing()) {
+    writePreparing({
+      resume_id: resumeId,
       target_role: form.targetRole,
       difficulty: form.difficulty,
     })
+  } else {
+    starting.value = true
+  }
+  const payload = {
+    resume_id: resumeId,
+    target_role: form.targetRole,
+    difficulty: form.difficulty,
+  }
+  try {
+    const session = await startSessionCreate(payload)
+    clearPreparing()
     markSessionTypewriter(session.id)
     await router.push(`/interview/${session.id}`)
   } catch (error) {
+    clearPreparing()
     ElMessage.error(error instanceof ApiError ? error.message : '开始面试失败')
-  } finally {
-    starting.value = false
   }
+}
+
+async function startInterview(resumeId = form.resumeId) {
+  if (starting.value) return
+  if (resumeId) form.resumeId = resumeId
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid || !form.resumeId) return
+  await finishStart()
 }
 
 function continueInterview() {
@@ -158,7 +254,12 @@ function continueInterview() {
   }
 }
 
-onMounted(loadPage)
+onMounted(async () => {
+  await loadPage()
+  if (starting.value) {
+    await finishStart()
+  }
+})
 </script>
 
 <template>
