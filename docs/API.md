@@ -376,7 +376,7 @@ Authorization: Bearer <access_token>
 }
 ```
 
-已结束时 `current_question` 为 `null`，各轮带 `score` 与 `comment`，`report` 为加权总分：
+已结束时 `current_question` 为 `null`，各轮带 `score` 与 `comment`（收尾句没有回答时 `answer` 为空字符串），`report` 为加权总分：
 
 ```json
 {
@@ -472,7 +472,32 @@ Authorization: Bearer <access_token>
 }
 ```
 
-最后一轮完成后 `status` 为 `completed`，`current_turn` 为 `null`，`report` 为各轮评估汇总，并写入 `interview_sessions.report`。本轮点评仍不出现在这次响应里，结束后用 GET 查看：
+进入收尾时打出模板「今天的面试先到这里，你有想问我的吗？」，同一请求内生成报告并将 `status` 标为 `completed`。此时 `current_turn` 仍带收尾问句，供前端展示 3 秒后再切结束页；`report` 为各轮评估汇总，并写入 `interview_sessions.report`。本轮点评仍不出现在这次响应里，结束后用 GET 查看：
+
+```json
+{
+  "id": 1,
+  "status": "completed",
+  "current_turn": {
+    "seq": 12,
+    "action": "next_stage",
+    "question": "今天的面试先到这里，你有想问我的吗？"
+  },
+  "report": {
+    "score": 72,
+    "stages": [
+      { "kind": "project_probe", "score": 80 },
+      { "kind": "fundamentals", "score": 65 },
+      { "kind": "scenario", "score": 70 }
+    ],
+    "covered": ["intro", "p1"],
+    "missing": ["p2"],
+    "said_dont_know_count": 0
+  }
+}
+```
+
+其它结束路径（例如旧场次补交收尾）`current_turn` 为 `null`：
 
 ```json
 {
@@ -493,7 +518,7 @@ Authorization: Bearer <access_token>
 }
 ```
 
-没有待答轮次、场次已结束或已放弃返回 `409`。场次不存在或不属于当前用户返回 `404`。空回答返回 `422`。评估或出题失败返回 `500`，文案「处理本轮回答失败」。
+没有待答轮次、场次已结束或已放弃返回 `409`。场次不存在或不属于当前用户返回 `404`。空回答返回 `422`，文案「回答不能为空」；当前待答是收尾句时允许空回答。评估或出题失败返回 `500`，文案「处理本轮回答失败」。
 
 请求头 `Accept` 包含 `text/event-stream` 时，同一路径改为 SSE。先校验场次能否作答：不存在仍返回 `404`，无法作答仍返回 `409`。通过后响应 `200`，`Content-Type` 为 `text/event-stream`。评估阶段先发 `status`，出题时模型 token 到达即发 `delta`，落库后再发 `done`。图仍在一次请求内跑完，不保存跨请求状态。
 
@@ -523,7 +548,7 @@ data: {"detail":"处理本轮回答失败"}
 
 第一问仍由创建场次的 JSON 返回，不走 SSE。
 
-用户响应中不返回本轮完整 `evaluation`。评估写入 `interview_turns.evaluation`（含模型给出的分数和点评）。代码按深度、跑题、「不会」把分数钳在区间内，并让点评开头的分数与之一致。结束时按阶段加权：`project_probe` 0.35、`fundamentals` 0.30、`scenario` 0.35；同一 `kind` 的多段先平均，开场和收尾不计分。`intro` / `closing` 用代码评估，不调模型；`closing` 问句为模板。
+用户响应中不返回本轮完整 `evaluation`。评估写入 `interview_turns.evaluation`（含模型给出的分数和点评）。代码按深度、跑题、「不会」把分数钳在区间内，并让点评开头的分数与之一致。结束时按阶段加权：`project_probe` 0.35、`fundamentals` 0.30、`scenario` 0.35；同一 `kind` 的多段先平均，开场和收尾不计分。`intro` / `closing` 用代码评估，不调模型；`closing` 问句为模板，打出后不等回答。
 
 ## 业务流程
 

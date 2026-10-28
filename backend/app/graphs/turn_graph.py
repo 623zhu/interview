@@ -309,6 +309,14 @@ def decide(state: TurnState) -> dict[str, Any]:
 def route_after_decide(state: TurnState) -> str:
     return "report" if state.get("action") == "end" else "ask"
 
+
+def asked_closing(state: TurnState) -> bool:
+    return (state.get("question") or "") == CLOSING_QUESTION
+
+
+def route_after_ask(state: TurnState) -> str:
+    return "report" if asked_closing(state) else "persist"
+
 # 综合各轮评估为报告。
 def report(state: TurnState) -> dict[str, Any]:
     plan = InterviewPlan.model_validate(state["plan"])
@@ -322,7 +330,7 @@ def report(state: TurnState) -> dict[str, Any]:
     if state.get("evaluation"):
         items.append((progress.stage_index, TurnEvaluation.model_validate(state["evaluation"])))
     built = build_interview_report(plan=plan, items=items)
-    return {"report": built.model_dump(), "question": None}
+    return {"report": built.model_dump()}
 
 
 def _token_queue(config: RunnableConfig) -> asyncio.Queue[tuple[str, dict[str, Any]] | None] | None:
@@ -527,23 +535,37 @@ async def persist(state: TurnState, config: RunnableConfig) -> dict[str, Any]:
     current.evaluation = state.get("evaluation")
     session_row.progress = state["next_progress"]
 
-    if state.get("action") == "end":
+    closing = asked_closing(state)
+    ended = state.get("action") == "end" or closing
+
+    if closing and state.get("action") != "end":
+        db.add(
+            InterviewTurn(
+                session_id=session_id,
+                seq=state["pending_seq"] + 1,
+                stage_index=state["next_progress"]["stage_index"],
+                action=state["action"],
+                question=CLOSING_QUESTION,
+                answer="",
+                evaluation=None,
+            )
+        )
+    elif not ended:
+        db.add(
+            InterviewTurn(
+                session_id=session_id,
+                seq=state["pending_seq"] + 1,
+                stage_index=state["next_progress"]["stage_index"],
+                action=state["action"],
+                question=state["question"] or "",
+                answer="",
+                evaluation=None,
+            )
+        )
+
+    if ended:
         session_row.status = "completed"
         session_row.report = state.get("report")
-        await db.commit()
-        return {}
-
-    db.add(
-        InterviewTurn(
-            session_id=session_id,
-            seq=state["pending_seq"] + 1,
-            stage_index=state["next_progress"]["stage_index"],
-            action=state["action"],
-            question=state["question"] or "",
-            answer="",
-            evaluation=None,
-        )
-    )
     await db.commit()
     return {}
 
@@ -565,7 +587,11 @@ def build_turn_graph():
         route_after_decide,
         {"ask": "ask", "report": "report"},
     )
-    graph.add_edge("ask", "persist")
+    graph.add_conditional_edges(
+        "ask",
+        route_after_ask,
+        {"report": "report", "persist": "persist"},
+    )
     graph.add_edge("report", "persist")
     graph.add_edge("persist", END)
     return graph.compile()

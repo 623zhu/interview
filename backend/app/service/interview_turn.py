@@ -12,9 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import get_logger
 from app.graphs.turn_graph import (
+    CLOSING_QUESTION,
     SessionConflictError,
     SessionNotFoundError,
     TurnPipelineError,
+    asked_closing,
     sse_token_queue,
 )
 from app.models.interview_sessions import InterviewSession
@@ -26,6 +28,10 @@ from app.schemas.interviews import (
 )
 
 logger = get_logger()
+
+
+class EmptyTurnAnswerError(Exception):
+    pass
 
 
 def format_sse(event: str, data: dict[str, Any]) -> str:
@@ -52,20 +58,21 @@ def _log_turn_done(session_id: int, final_state: dict[str, Any], duration_ms: in
 
 
 def _submit_response(session_id: int, final_state: dict[str, Any]) -> InterviewTurnSubmitResponse:
-    ended = final_state.get("action") == "end"
+    closing = asked_closing(final_state)
+    ended = final_state.get("action") == "end" or closing
     report = final_state.get("report")
     pending_seq = final_state.get("pending_seq")
     return InterviewTurnSubmitResponse(
         id=session_id,
         status="completed" if ended else "in_progress",
         current_turn=(
-            None
-            if ended
-            else CurrentTurn(
+            CurrentTurn(
                 seq=(pending_seq or 0) + 1,
                 action=final_state.get("action") or "follow_up",
                 question=final_state.get("question") or "",
             )
+            if closing or not ended
+            else None
         ),
         report=InterviewReport.model_validate(report) if report else None,
     )
@@ -101,6 +108,7 @@ async def assert_can_submit_turn(
     user_id: int,
     session_id: int,
     db: AsyncSession,
+    answer: str | None = None,
 ) -> None:
     result = await db.execute(
         select(InterviewSession).where(
@@ -114,13 +122,16 @@ async def assert_can_submit_turn(
     if session_row.status != "in_progress":
         raise SessionConflictError()
     pending_result = await db.execute(
-        select(InterviewTurn.id).where(
+        select(InterviewTurn).where(
             InterviewTurn.session_id == session_id,
             InterviewTurn.answer == "",
         )
     )
-    if pending_result.scalar_one_or_none() is None:
+    pending = pending_result.scalar_one_or_none()
+    if pending is None:
         raise SessionConflictError()
+    if answer is not None and not answer.strip() and pending.question != CLOSING_QUESTION:
+        raise EmptyTurnAnswerError()
 
 
 async def submit_turn_service(

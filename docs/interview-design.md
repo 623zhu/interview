@@ -110,7 +110,8 @@ flowchart TD
     E -->|follow_up / deepen / hint| F[出下一问]
     E -->|next_stage| G[取下一阶段]
     G --> F
-    E -->|end| H[生成报告]
+    F -->|closing 模板| H[生成报告]
+    E -->|end| H
     F --> C
 ```
 
@@ -136,7 +137,7 @@ flowchart TD
 | 2 | `project_probe` | resume | 3～5 | 模型从 `profile.projects` 里挑 1 个 |
 | 3～4 | `fundamentals` | bank | 各 2～3 | 模型从候选卡里挑 2 张 |
 | 5 | `scenario` | bank | 3～4 | 模型再挑 1 张偏场景的卡 |
-| 6 | `closing` | resume | 1 | 代码写死 |
+| 6 | `closing` | resume | 1 | 代码写死；问句打出后不等回答，当场结束 |
 
 阶段结构：
 
@@ -186,7 +187,8 @@ class TurnEvaluation(BaseModel):
 
 | 情况 | 动作 |
 | --- | --- |
-| `intro` / `closing` 已答完 | `next_stage` / `end` |
+| `intro` 已答完 | `next_stage` |
+| 进入 `closing` | 打出收尾模板后直接 `report` 并结束，不等候选人回答 |
 | `turn_in_stage >= max_turns` | `next_stage`，最后一阶段则 `end` |
 | `said_dont_know`、`off_topic` 或 `shallow` | `consecutive_misses += 1` |
 | `consecutive_misses >= 2` | 先 `hint`；已经 hint 过则 `next_stage` |
@@ -200,7 +202,7 @@ class TurnEvaluation(BaseModel):
 
 ### 3. 出题时模型只负责说话
 
-`ask` 节点只生成问题，对 `llm_model_light` 使用流式输出，只吐问题原文，不再包 JSON。输入包括：当前考点、这次动作、最近 2～3 轮、相关考点卡或简历锚点、`probe_path` 里对应深度。`POST /turns` 在 `Accept: text/event-stream` 时把模型 token 即时写成 SSE `delta`；评估仍先跑完。`persist` 仍在整题生成之后。第一问是模板，由前端打字机展示。
+`ask` 节点只生成问题，对 `llm_model_light` 使用流式输出，只吐问题原文，不再包 JSON。输入包括：当前考点、这次动作、最近 2～3 轮、相关考点卡或简历锚点、`probe_path` 里对应深度。`POST /turns` 在 `Accept: text/event-stream` 时把模型 token 即时写成 SSE `delta`；评估仍先跑完。`persist` 仍在整题生成之后。第一问是模板，由前端打字机展示。收尾句是模板「今天的面试先到这里，你有想问我的吗？」：打出后本请求内生成报告并标 `completed`，不插入待答轮次。前端展示该句后再停留 3 秒切到结束页。已停在收尾待答的旧场次，前端同样等待 3 秒后提交空回答结束。
 
 问题素材有三个来源：
 
@@ -240,11 +242,11 @@ class TurnEvaluation(BaseModel):
 ## 数据
 
 - `interview_sessions`：谁在面、哪份简历、岗位、难度、简历快照、计划、进度、状态。正常结束时写入 `report`。开场前就要落库，与是否使用 LangGraph 无关。
-- `interview_turns`：每一轮的动作、问题、回答、评估。`answer` 为空字符串表示正在等用户（列为 `NOT NULL`）。
+- `interview_turns`：每一轮的动作、问题、回答、评估。`answer` 为空字符串表示正在等用户；收尾句不需作答，结束时仍可为空。
 - 报告由各轮评估按阶段加权汇总，写入场次，不必再把整段对话交给模型重新判断。
 - 用户接口不返回 `plan` 和各轮完整 `evaluation`。结束后的 GET 只公开闸后的 `score` 与 `comment`。
 
-状态：`planned` / `in_progress` / `completed` / `abandoned`。创建成功并给出第一问后即为 `in_progress`。中途退出把状态改为 `abandoned`，不写 `report`；只有正常走完 `closing` 才是 `completed`。
+状态：`planned` / `in_progress` / `completed` / `abandoned`。创建成功并给出第一问后即为 `in_progress`。中途退出把状态改为 `abandoned`，不写 `report`；打出 `closing` 收尾句并写入报告后即为 `completed`，不要求候选人回答。
 
 ## 代价
 

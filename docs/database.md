@@ -159,7 +159,7 @@
 | `stage_index` | `INT` | 是 | 无 | 对应 `plan.stages` 下标，从 0 起 |  |
 | `action` | `VARCHAR(255)` | 是 | 无 | `first` / `follow_up` / `deepen` / `hint` / `next_stage` / `end` |  |
 | `question` | `VARCHAR(2048)` | 是 | 无 | 给用户看的问题 |  |
-| `answer` | `VARCHAR(8000)` | 是 | 无 | 用户回答。空字符串表示本轮尚未作答。当前列为 `NOT NULL` |  |
+| `answer` | `VARCHAR(8000)` | 是 | 无 | 用户回答。空字符串表示本轮尚未作答；收尾句不需作答，场次结束后仍可为空。当前列为 `NOT NULL` |  |
 | `evaluation` | `JSON` | 否 | 空 | 答完后的评估。`NULL` 表示尚未评估。完整结构不对用户返回；结束后 GET 只公开其中的 `score`、`comment` |  |
 | `created_at` | `DATETIME(6)` | 是 | 无 | 创建时间，由应用写入 UTC |  |
 | `updated_at` | `DATETIME(6)` | 是 | 无 | 更新时间，由应用写入 UTC |  |

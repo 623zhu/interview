@@ -32,6 +32,7 @@ from app.service.interview_session import (
     list_interview_sessions_service,
 )
 from app.service.interview_turn import (
+    EmptyTurnAnswerError,
     assert_can_submit_turn,
     submit_turn_service,
     submit_turn_sse,
@@ -116,11 +117,14 @@ async def submit_interview_turn(
                     user_id=current_user.id,
                     session_id=session_id,
                     db=db,
+                    answer=body.answer,
                 )
             except (TurnSessionNotFoundError, SessionNotFoundError):
                 raise HTTPException(status.HTTP_404_NOT_FOUND, detail="面试场次不存在")
             except TurnSessionConflictError:
                 raise HTTPException(status.HTTP_409_CONFLICT, detail="当前场次无法作答")
+            except EmptyTurnAnswerError:
+                raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="回答不能为空")
 
         async def events():
             async with request.app.state.mysql_session_factory() as db:
@@ -146,6 +150,12 @@ async def submit_interview_turn(
 
     async with request.app.state.mysql_session_factory() as db:
         try:
+            await assert_can_submit_turn(
+                user_id=current_user.id,
+                session_id=session_id,
+                db=db,
+                answer=body.answer,
+            )
             return await submit_turn_service(
                 user_id=current_user.id,
                 session_id=session_id,
@@ -158,6 +168,8 @@ async def submit_interview_turn(
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="面试场次不存在")
         except TurnSessionConflictError:
             raise HTTPException(status.HTTP_409_CONFLICT, detail="当前场次无法作答")
+        except EmptyTurnAnswerError:
+            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail="回答不能为空")
         except TurnPipelineError:
             logger.exception("turn pipeline failed session_id=%s", session_id)
             raise HTTPException(

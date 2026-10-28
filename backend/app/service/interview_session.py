@@ -672,7 +672,7 @@ async def get_interview_session_service(
     answered = [
         _public_turn(turn, completed=completed)
         for turn in turns
-        if turn.answer != ""
+        if turn.answer != "" or (completed and turn.question)
     ]
     plan = InterviewPlan.model_validate(session_row.plan)
     report = None

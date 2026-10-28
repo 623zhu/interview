@@ -6,6 +6,7 @@ import {
   abandonInterviewSession,
   consumeSessionTypewriter,
   getInterviewSession,
+  submitInterviewTurn,
   submitInterviewTurnStream,
   type InterviewSessionDetail,
   type InterviewTurnSubmitResponse,
@@ -32,6 +33,7 @@ const submitting = ref(false)
 const abandoning = ref(false)
 const thinking = ref(false)
 const typingIntro = ref(false)
+const holdingClose = ref(false)
 const session = ref<InterviewSessionDetail | null>(null)
 const messages = ref<ChatMessage[]>([])
 const answer = ref('')
@@ -42,11 +44,14 @@ const inProgress = computed(() => session.value?.status === 'in_progress')
 const canSend = computed(
   () =>
     inProgress.value &&
+    !holdingClose.value &&
     !submitting.value &&
     !thinking.value &&
     !typingIntro.value &&
     Boolean(answer.value.trim()),
 )
+const CLOSING_QUESTION = '今天的面试先到这里，你有想问我的吗？'
+const CLOSING_HOLD_MS = 3000
 const difficultyLabel: Record<string, string> = {
   easy: '简单',
   medium: '中等',
@@ -60,14 +65,27 @@ const stageLabel: Record<string, string> = {
   closing: '收尾',
 }
 
+const DRIP_MS = 24
+
 let abortStream: AbortController | null = null
 let typewriterToken = 0
 let dripGen = 0
+let dripBuffer = ''
+let dripping = false
 let messageUid = 0
+let closingHoldToken = 0
+
+function isClosingQuestion(text: string | null | undefined) {
+  return (text ?? '').trim() === CLOSING_QUESTION
+}
 
 function nextMessageUid(prefix: string) {
   messageUid += 1
   return `${prefix}-${messageUid}`
+}
+
+function noteBody(comment: string | null | undefined) {
+  return (comment ?? '').trim().replace(/^本轮\s*\d+\s*分[。.]?\s*/, '')
 }
 
 function sleep(ms: number) {
@@ -136,19 +154,50 @@ function ensureLiveMessage() {
 function enqueueDrip(text: string, gen: number) {
   if (!text || gen !== dripGen) return
   thinking.value = false
+  dripBuffer += text
   ensureLiveMessage()
-  const live = liveMessage()
-  if (live) {
-    live.text += text
+  if (!dripping) {
+    dripping = true
+    void runDrip(gen)
   }
-  void scrollToBottom()
+}
+
+async function runDrip(gen: number) {
+  try {
+    while (dripBuffer.length && gen === dripGen) {
+      const chunk = dripBuffer.slice(0, 1)
+      dripBuffer = dripBuffer.slice(1)
+      const live = liveMessage()
+      if (live) {
+        live.text += chunk
+      }
+      await scrollToBottom()
+      await sleep(DRIP_MS)
+    }
+  } finally {
+    if (gen === dripGen) {
+      dripping = false
+      if (dripBuffer.length) {
+        dripping = true
+        void runDrip(gen)
+      }
+    }
+  }
+}
+
+async function waitDrip(gen: number) {
+  while (gen === dripGen && (dripping || dripBuffer.length)) {
+    await sleep(16)
+  }
 }
 
 async function finishDrip(gen: number, finalText?: string | null) {
+  await waitDrip(gen)
   const live = liveMessage()
   const current = live?.text ?? ''
   if (finalText && !current) {
     enqueueDrip(finalText, gen)
+    await waitDrip(gen)
   }
   const done = liveMessage()
   if (done && gen === dripGen) {
@@ -204,6 +253,9 @@ async function loadSession() {
     } else {
       messages.value = messagesFromSession(detail)
       await scrollToBottom()
+      if (detail.status === 'in_progress' && isClosingQuestion(detail.current_question)) {
+        void autoEndClosing()
+      }
     }
   } catch (error) {
     session.value = null
@@ -214,6 +266,40 @@ async function loadSession() {
     }
   } finally {
     loading.value = false
+  }
+}
+
+async function revealEnded(result?: InterviewTurnSubmitResponse) {
+  const token = ++closingHoldToken
+  holdingClose.value = true
+  await sleep(CLOSING_HOLD_MS)
+  if (token !== closingHoldToken) return
+  if (result) {
+    applyDone(result)
+  }
+  ElMessage.success('本场面试已结束')
+  await loadSession()
+  holdingClose.value = false
+}
+
+async function autoEndClosing() {
+  const token = ++closingHoldToken
+  holdingClose.value = true
+  await sleep(CLOSING_HOLD_MS)
+  if (token !== closingHoldToken) return
+  submitting.value = true
+  try {
+    const result = await submitInterviewTurn(sessionId.value, '')
+    applyDone(result)
+    ElMessage.success('本场面试已结束')
+    await loadSession()
+  } catch (error) {
+    ElMessage.error(error instanceof ApiError ? error.message : '结束面试失败')
+  } finally {
+    submitting.value = false
+    if (token === closingHoldToken) {
+      holdingClose.value = false
+    }
   }
 }
 
@@ -248,11 +334,13 @@ async function onSubmit() {
   thinking.value = true
   dripGen += 1
   const gen = dripGen
+  dripBuffer = ''
+  dripping = false
   await scrollToBottom()
 
   abortStream?.abort()
   abortStream = new AbortController()
-  let completed = false
+  let doneResult: InterviewTurnSubmitResponse | null = null
 
   try {
     await submitInterviewTurnStream(
@@ -268,14 +356,6 @@ async function onSubmit() {
           enqueueDrip(piece, gen)
           return
         }
-        if (event === 'done') {
-          thinking.value = false
-          const result = data as InterviewTurnSubmitResponse
-          await finishDrip(gen, result.current_turn?.question)
-          applyDone(result)
-          completed = result.status === 'completed'
-          return
-        }
         if (event === 'error') {
           const detail =
             typeof data === 'object' && data && 'detail' in data
@@ -283,10 +363,28 @@ async function onSubmit() {
               : '处理本轮回答失败'
           throw new ApiError(500, detail)
         }
+        if (event !== 'done') return
+        thinking.value = false
+        const result = data as InterviewTurnSubmitResponse
+        await finishDrip(gen, result.current_turn?.question)
+        doneResult = result
+        const closing =
+          isClosingQuestion(result.current_turn?.question) ||
+          isClosingQuestion(liveMessage()?.text)
+        if (closing) {
+          holdingClose.value = true
+        } else {
+          applyDone(result)
+        }
       },
       abortStream.signal,
     )
-    if (completed) {
+    const closing =
+      isClosingQuestion(doneResult?.current_turn?.question) ||
+      isClosingQuestion(liveMessage()?.text)
+    if (closing && doneResult) {
+      await revealEnded(doneResult)
+    } else if (doneResult?.status === 'completed') {
       ElMessage.success('本场面试已结束')
       await loadSession()
     } else {
@@ -338,6 +436,7 @@ onMounted(loadSession)
 onUnmounted(() => {
   typewriterToken += 1
   dripGen += 1
+  closingHoldToken += 1
   abortStream?.abort()
 })
 </script>
@@ -348,7 +447,9 @@ onUnmounted(() => {
 
     <main v-loading="loading" class="main">
       <div v-if="session" class="session">
-        <section class="chat-panel" :class="{ ended: !inProgress }">
+        <div class="board" :class="{ ended: !inProgress }">
+          <div class="panel-bg" />
+
           <div class="intro">
             <div>
               <h1>{{ session.target_role }}</h1>
@@ -363,7 +464,7 @@ onUnmounted(() => {
                 {{ inProgress ? '返回设置' : '返回记录' }}
               </el-button>
               <el-button
-                v-if="inProgress"
+                v-if="inProgress && !holdingClose"
                 :loading="abandoning"
                 @click="onAbandon"
               >
@@ -379,21 +480,31 @@ onUnmounted(() => {
               class="row"
               :class="item.role"
             >
-              <div class="avatar">{{ item.role === 'interviewer' ? '面' : '我' }}</div>
-              <div class="col">
-                <div class="bubble" :class="{ streaming: item.streaming }">
-                  {{ item.text }}<span v-if="item.streaming" class="caret" />
+              <div class="turn">
+                <div class="avatar">{{ item.role === 'interviewer' ? '面' : '我' }}</div>
+                <div class="col">
+                  <div class="bubble" :class="{ streaming: item.streaming }">
+                    {{ item.text }}<span v-if="item.streaming" class="caret" />
+                  </div>
                 </div>
-                <p v-if="item.comment" class="meta">{{ item.comment }}</p>
               </div>
+              <aside v-if="item.comment" class="note">
+                <div class="note-head">
+                  <span class="note-label">评估</span>
+                  <strong v-if="item.score != null">{{ item.score }} 分</strong>
+                </div>
+                <p v-if="noteBody(item.comment)" class="note-body">{{ noteBody(item.comment) }}</p>
+              </aside>
             </div>
 
             <div v-if="thinking" class="row interviewer">
-              <div class="avatar">面</div>
-              <div class="bubble thinking">
-                <span class="dot" />
-                <span class="dot" />
-                <span class="dot" />
+              <div class="turn">
+                <div class="avatar">面</div>
+                <div class="bubble thinking">
+                  <span class="dot" />
+                  <span class="dot" />
+                  <span class="dot" />
+                </div>
               </div>
             </div>
 
@@ -408,7 +519,7 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <div v-if="inProgress" class="composer">
+          <div v-if="inProgress && !holdingClose" class="composer">
             <el-input
               v-model="answer"
               type="textarea"
@@ -429,7 +540,7 @@ onUnmounted(() => {
               发送
             </el-button>
           </div>
-        </section>
+        </div>
       </div>
     </main>
   </div>
@@ -451,23 +562,36 @@ onUnmounted(() => {
 .session {
   flex: 1;
   min-height: 0;
-  width: min(100%, 960px);
+  width: min(100%, 1240px);
   margin: 0 auto;
   padding: 20px 24px 24px;
   display: flex;
   flex-direction: column;
 }
-.chat-panel {
+.board {
   flex: 1;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  position: relative;
+}
+.board.ended {
+  grid-template-columns: minmax(0, 1fr) 260px;
+  column-gap: 16px;
+}
+.panel-bg {
+  grid-column: 1;
+  grid-row: 1 / -1;
   background: #fff;
   border-radius: 22px;
   box-shadow: 0 8px 28px rgba(31, 42, 55, 0.06);
+  pointer-events: none;
 }
 .intro {
+  grid-column: 1;
+  grid-row: 1;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -489,22 +613,47 @@ onUnmounted(() => {
   gap: 8px;
 }
 .thread {
-  flex: 1;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  z-index: 1;
   min-height: 0;
   overflow: auto;
-  padding: 20px 22px 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: max-content;
+  align-content: start;
+  column-gap: 16px;
+  padding: 20px 0 12px;
 }
-.chat-panel.ended .thread {
+.board.ended .thread {
+  grid-template-columns: minmax(0, 1fr) 260px;
   padding-bottom: 24px;
 }
 .row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: 16px;
+  margin-bottom: 18px;
+}
+.board.ended .row {
+  grid-template-columns: minmax(0, 1fr) 260px;
+}
+.turn {
   display: flex;
   gap: 10px;
-  margin-bottom: 16px;
-  max-width: 100%;
+  min-width: 0;
+  grid-column: 1;
+  padding: 0 22px;
 }
-.row.user {
+.row.user .turn {
   flex-direction: row-reverse;
+}
+.row.interviewer .col {
+  max-width: min(72%, 560px);
+}
+.row.user .col {
+  max-width: min(72%, 520px);
 }
 .avatar {
   width: 32px;
@@ -522,9 +671,6 @@ onUnmounted(() => {
 .row.user .avatar {
   background: #1677ff;
   color: #fff;
-}
-.col {
-  max-width: min(72%, 560px);
 }
 .bubble {
   padding: 10px 14px;
@@ -570,14 +716,45 @@ onUnmounted(() => {
   vertical-align: -2px;
   animation: blink 1s step-end infinite;
 }
-.meta {
-  margin: 6px 2px 0;
+.note {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+  min-width: 0;
+  padding: 10px 12px 12px;
+  background: #fffdf7;
+  border: 1px solid #f1e4c3;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(120, 80, 20, 0.05);
+}
+.note-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.note-label {
   font-size: 12px;
-  color: var(--el-text-color-secondary);
-  line-height: 1.5;
+  font-weight: 600;
+  color: #b45309;
+}
+.note-head strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: #92400e;
+}
+.note-body {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #57534e;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .report {
-  margin: 8px 0 8px;
+  grid-column: 1;
+  margin: 8px 22px 8px;
   padding: 16px 18px;
   background: #f8fafc;
   border-radius: 14px;
@@ -605,6 +782,9 @@ onUnmounted(() => {
   color: var(--el-text-color-regular);
 }
 .composer {
+  grid-column: 1;
+  grid-row: 3;
+  z-index: 1;
   display: flex;
   flex-shrink: 0;
   gap: 12px;
@@ -625,7 +805,7 @@ onUnmounted(() => {
 .composer :deep(.el-button) {
   height: 40px;
 }
-@media (max-width: 640px) {
+@media (max-width: 840px) {
   .session {
     padding: 12px 12px 16px;
   }
@@ -633,8 +813,21 @@ onUnmounted(() => {
     flex-direction: column;
     align-items: flex-start;
   }
-  .col {
+  .board.ended {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .board.ended .thread,
+  .board.ended .row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .row.interviewer .col,
+  .row.user .col {
     max-width: min(86%, 560px);
+  }
+  .note {
+    grid-column: 1;
+    grid-row: auto;
+    margin: 0 22px 0 48px;
   }
 }
 @keyframes pulse {
