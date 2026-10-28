@@ -48,7 +48,7 @@
 Authorization: Bearer <access_token>
 ```
 
-缺少 Token、格式不是 Bearer、签名无效、过期或用户不存在时返回 `401`，响应体 `{"detail": "Unauthorized"}`。刷新令牌存在 Redis `token:refresh:{user_id}`，同一用户新登录或刷新成功会覆盖旧刷新令牌。访问令牌有效期由 `JWT_ACCESS_TOKEN_EXPIRES_MINUTES` 控制，刷新令牌由 `JWT_REFRESH_TOKEN_EXPIRES_DAYS` 控制。访问令牌过期后，用刷新令牌调用 `POST /api/v1/users/session/refresh` 换发新的一对令牌；刷新令牌无效或过期则重新登录。
+缺少 Token、格式不是 Bearer、签名无效、过期或用户不存在时返回 `401`，响应体 `{"detail": "Unauthorized"}`。刷新令牌存在 Redis `token:refresh:{user_id}`，同一用户新登录或刷新成功会覆盖旧刷新令牌。重置密码成功会删除该键，旧刷新令牌立即失效。访问令牌有效期由 `JWT_ACCESS_TOKEN_EXPIRES_MINUTES` 控制，刷新令牌由 `JWT_REFRESH_TOKEN_EXPIRES_DAYS` 控制。访问令牌过期后，用刷新令牌调用 `POST /api/v1/users/session/refresh` 换发新的一对令牌；刷新令牌无效或过期则重新登录。
 
 ## 健康检查
 
@@ -208,7 +208,7 @@ Authorization: Bearer <access_token>
 }
 ```
 
-验证码错误返回 `400`。用户不存在返回 `404`。
+验证码错误返回 `400`。用户不存在返回 `404`。重置成功后删除 Redis 中该用户的刷新令牌，旧会话立即失效，需重新登录。已发出的访问令牌仍有效至过期。
 
 ## 上传简历
 

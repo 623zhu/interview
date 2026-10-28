@@ -29,6 +29,8 @@ export function sendRegisterCode(email:string) {
     return request<Record<string,never>>('/api/v1/users/verification-codes',{
          method:'POST',
          body:JSON.stringify({email}),
+         skipAuth: true,
+         skipRefresh: true,
     })
 }
 
@@ -40,6 +42,8 @@ export function register(email: string, password: string, verificationCode: stri
         password,
         verification_code: verificationCode,
       }),
+      skipAuth: true,
+      skipRefresh: true,
     })
   }
 
@@ -56,6 +60,8 @@ export function register(email: string, password: string, verificationCode: stri
     return request<Record<string, never>>('/api/v1/users/password-reset/verification-codes', {
       method: 'POST',
       body: JSON.stringify({ email }),
+      skipAuth: true,
+      skipRefresh: true,
     })
   }
 
@@ -67,5 +73,7 @@ export function register(email: string, password: string, verificationCode: stri
         new_password: newPassword,
         verification_code: verificationCode,
       }),
+      skipAuth: true,
+      skipRefresh: true,
     })
   }

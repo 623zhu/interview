@@ -206,7 +206,7 @@ erDiagram
 | `reset:code:{email}` | 重置密码验证码 | 5 分钟 |
 | `verify:limit:email:{email}` | 发验证码：同一邮箱冷却 | 60 秒 |
 | `verify:limit:ip:{ip}` | 发验证码：同一 IP 计数，10 分钟最多 10 次 | 10 分钟 |
-| `token:refresh:{user_id}` | 当前有效的刷新令牌 | `JWT_REFRESH_TOKEN_EXPIRES_DAYS` |
+| `token:refresh:{user_id}` | 当前有效的刷新令牌。新登录、刷新成功会覆盖；重置密码或退出登录会删除 | `JWT_REFRESH_TOKEN_EXPIRES_DAYS` |
 
 ## 索引
 

@@ -62,6 +62,11 @@
 - 每轮评估增加模型给出的分数和点评。代码按深度、跑题、「不会」钳制分数后写入；结束时按项目深挖、基础、场景加权得到总分，并写入 `interview_sessions.report`。进行中不返回点评；结束后 `GET /api/v1/interview-sessions/{id}` 优先读该列，旧场次现算后补写。
 - 发送注册验证码失败时返回固定文案 `发送验证码失败`，不再把内部错误原文回给客户端。
 
+### Security
+
+- 重置密码成功后删除 Redis 中的刷新令牌，旧会话不能再换新访问令牌，需重新登录。
+- 注册、发验证码、重置密码的前端请求不再携带登录令牌，也不再因 401 触发刷新或整页跳登录。
+
 ### Database / Deployment Notes
 
 - 数据库迁移：在 `backend/` 执行 `alembic upgrade head`。顺序为 `cc267a266b69`（`users`）、`54098f4c206e`（`resumes`）、`3f212b686956`（`interview_sessions`）、`a41683e0a265`（`topic_cards`）、`1ce649d360ab`（`interview_turns`）、`c4f8a21b9d07`（`interview_sessions.report`）。当前 head 为 `c4f8a21b9d07`。`c4f8a21b9d07` 给场次表增加可空 JSON 列 `report`，进行中为 `NULL`，正常结束时写入。

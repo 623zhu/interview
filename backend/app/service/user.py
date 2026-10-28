@@ -228,6 +228,8 @@ async def reset_password_service(
     user.password_hash = password_hash.hash(new_password)
     await session.commit()
     await redis.delete(code_key)
+    await redis.delete(f"token:refresh:{user.id}")
+    logger.info("password reset revoked refresh token user_id=%s", user.id)
 
 
 async def logout_user_service(

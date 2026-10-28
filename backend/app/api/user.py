@@ -104,7 +104,7 @@ async def login_user(body:UserLoginRequest,request:Request)->UserLoginResponse:
 @router.post(
     "/password-reset",
     summary="重置密码",
-    description="校验验证码并重置密码",
+    description="校验验证码并重置密码。成功后吊销该用户的刷新令牌，需重新登录。",
     status_code=status.HTTP_200_OK,
 )
 async def reset_password(body:ResetPasswordRequest,request:Request)->ResetPasswordResponse:
