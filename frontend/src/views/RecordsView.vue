@@ -39,9 +39,6 @@ function formatTime(value: string) {
 }
 
 function openSession(row: InterviewSessionListItem) {
-  void router.push(`/interview/${row.id}`)
-}
-
 async function loadSessions() {
   loading.value = true
   try {

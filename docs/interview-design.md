@@ -127,17 +127,17 @@ flowchart TD
 4. 入池难度：简单场 `easy`+`medium`（不含 hard）；中等场和困难场三种都可
 5. 按配额抽样最多 12 张，某档不够用相邻档补。简单 8 easy + 4 medium；中等 3 easy + 7 medium + 2 hard；困难 2 easy + 5 medium + 5 hard
 
-策划模型从这 12 张里挑 2 张基础 + 1 张场景，并受混搭约束：简单场禁止 hard、有 easy 时 medium 最多 1 张；中等场至少 1 张 medium，hard 最多 1 张且只能放场景；困难场候选含 hard 时场景必须是 hard。某档卡片不够时不硬性失败。
+策划模型从这 12 张里挑 5 张基础 + 1 张场景，并受混搭约束：简单场禁止 hard、有 easy 时 medium 最多 1 张；中等场至少 1 张 medium，hard 最多 1 张且只能放场景；困难场候选含 hard 时场景必须是 hard。某档卡片不够时不硬性失败。
 
-本场骨架由代码固定，模型只填中间阶段：
+本场骨架由代码固定种类和顺序，模型填中间阶段；项目深挖段数随简历项目变化：
 
 | 顺序 | kind | source | max_turns | 谁定内容 |
 | --- | --- | --- | --- | --- |
 | 1 | `intro` | resume | 1 | 代码写死 |
-| 2 | `project_probe` | resume | 3～5 | 模型从 `profile.projects` 里挑 1 个 |
-| 3～4 | `fundamentals` | bank | 各 2～3 | 模型从候选卡里挑 2 张 |
-| 5 | `scenario` | bank | 3～4 | 模型再挑 1 张偏场景的卡 |
-| 6 | `closing` | resume | 1 | 代码写死；问句打出后不等回答，当场结束 |
+| 随后 | `project_probe` | resume | 各 2～3 | 每个项目 1～2 问，每问单独一段；无项目则跳过 |
+| 再后 | `fundamentals` | bank | 各 2～3 | 模型从候选卡里挑 5 张 |
+| 再后 | `scenario` | bank | 2～3 | 模型再挑 1 张偏场景的卡 |
+| 最后 | `closing` | resume | 1 | 代码写死；问句打出后不等回答，当场结束 |
 
 阶段结构：
 
@@ -181,7 +181,7 @@ class TurnEvaluation(BaseModel):
 
 分数闸：`shallow` 不超过 50，`adequate` 在 40～85，`deep` 不低于 70；`said_dont_know` 不超过 30，`off_topic` 不超过 40。点评里的分数与闸后整数对齐。`decide` 仍只看结构化字段，不看分数。
 
-总分：同一 `stage_index` 先平均，两段 `fundamentals` 再合成一个阶段分，然后 `project_probe` 0.35、`fundamentals` 0.30、`scenario` 0.35。缺某个计分阶段时把权重摊到其余阶段。`intro` / `closing` 权重为 0。用户只在结束后的 GET 里看到各轮 `score`、`comment` 和报告里的总分、阶段分。
+总分：同一 `stage_index` 先平均，多段 `project_probe` / `fundamentals` 再按 `kind` 合成阶段分，然后 `project_probe` 0.35、`fundamentals` 0.30、`scenario` 0.35。缺某个计分阶段时把权重摊到其余阶段。`intro` / `closing` 权重为 0。用户只在结束后的 GET 里看到各轮 `score`、`comment` 和报告里的总分、阶段分。
 
 `decide_next_action` 是纯函数，输入评估结果、`progress`、当前 `stage`，输出一个动作。输入相同则输出相同，用单测覆盖性格，不必为了测规则去跑整张图。
 

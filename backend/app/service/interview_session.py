@@ -36,6 +36,10 @@ from app.service.interview_score import build_interview_report, gate_evaluation
 logger = get_logger()
 MAX_CANDIDATE_CARDS = 12
 PLAN_RETRY = 1
+FUNDAMENTALS_COUNT = 5
+MIN_PLAN_CARDS = FUNDAMENTALS_COUNT + 1
+SCORED_TURNS = (2, 3)
+PROJECT_QUESTIONS_PER_PROJECT = (1, 2)
 INTRO_QUESTION = "先做个一分钟自我介绍吧，可以结合你最近的项目。"
 SCENARIO_SKILL_TAGS = {"mq", "http", "distributed"}
 DIFFICULTY_QUOTAS: dict[Difficulty, dict[str, int]] = {
@@ -56,28 +60,32 @@ GENERATE_PLAN_PROMPT = """
 
 JSON 形状：
 {
-  "project_probe": {
-    "goal": "本阶段考察目标",
-    "max_turns": 4,
-    "resume_anchor": "项目名或公司名，没有可用锚点时为 null"
-  },
+  "project_probe": [
+    {"goal": "本问考察目标", "max_turns": 2, "resume_anchor": "项目名"},
+    {"goal": "同一项目的另一问，或下一个项目", "max_turns": 3, "resume_anchor": "项目名"}
+  ],
   "fundamentals": [
-    {"goal": "考察目标", "max_turns": 3, "topic_card_key": "候选卡 key"},
-    {"goal": "考察目标", "max_turns": 2, "topic_card_key": "另一个候选卡 key"}
+    {"goal": "考察目标", "max_turns": 2, "topic_card_key": "候选卡 key"},
+    {"goal": "考察目标", "max_turns": 3, "topic_card_key": "另一个候选卡 key"},
+    {"goal": "考察目标", "max_turns": 2, "topic_card_key": "第三个候选卡 key"},
+    {"goal": "考察目标", "max_turns": 2, "topic_card_key": "第四个候选卡 key"},
+    {"goal": "考察目标", "max_turns": 3, "topic_card_key": "第五个候选卡 key"}
   ],
   "scenario": {
     "goal": "考察目标",
-    "max_turns": 3,
+    "max_turns": 2,
     "topic_card_key": "候选卡 key",
     "resume_anchor": "能联系上的项目名，没有则为 null"
   }
 }
 
 约束：
-- fundamentals 必须恰好 2 条,key 互不相同，且都在候选卡里。
+- project_probe 是数组。projects 里每个项目必须出 1-2 个问题，每个问题单独一条；按项目在 projects 中的顺序排列。没有项目时必须是空数组。
+- 每条 project_probe.resume_anchor 必须是 projects 中的项目名，不要用公司名或技能名凑。
+- fundamentals 必须恰好 5 条,key 互不相同，且都在候选卡里。
 - scenario 的 key 在候选卡里，且不能与 fundamentals 重复。
-- project_probe.max_turns 取 3-5;fundamentals 取 2-3;scenario 取 3-4。
-- resume_anchor 必须是 allowed_anchors 中的一项，或为 null。
+- project_probe、fundamentals、scenario 的 max_turns 都取 2-3。
+- scenario.resume_anchor 必须是 allowed_anchors 中的一项，或为 null。
 - 遵守本场难度混搭规则。
 """
 
@@ -96,20 +104,23 @@ class PlanGenerationError(Exception):
 
 class _PlanProjectProbe(BaseModel):
     goal: str = Field(min_length=1)
-    max_turns: int = Field(ge=3, le=5)
-    resume_anchor: str | None = None
+    max_turns: int = Field(ge=SCORED_TURNS[0], le=SCORED_TURNS[1])
+    resume_anchor: str = Field(min_length=1)
 
 
 class _PlanBankStage(BaseModel):
     goal: str = Field(min_length=1)
-    max_turns: int
+    max_turns: int = Field(ge=SCORED_TURNS[0], le=SCORED_TURNS[1])
     topic_card_key: str = Field(min_length=1)
     resume_anchor: str | None = None
 
 
 class _GeneratedMiddlePlan(BaseModel):
-    project_probe: _PlanProjectProbe
-    fundamentals: list[_PlanBankStage] = Field(min_length=2, max_length=2)
+    project_probe: list[_PlanProjectProbe] = Field(default_factory=list)
+    fundamentals: list[_PlanBankStage] = Field(
+        min_length=FUNDAMENTALS_COUNT,
+        max_length=FUNDAMENTALS_COUNT,
+    )
     scenario: _PlanBankStage
 
 # 小写化以及去空格化
@@ -206,12 +217,12 @@ def _eligible_difficulties(difficulty: Difficulty) -> set[str]:
 def _plan_mix_instructions(difficulty: Difficulty, cards: list[TopicCard]) -> str:
     pool = {card.difficulty for card in cards}
     if difficulty == "easy":
-        extra = " fundamentals 优先 easy；三张卡里 medium 最多 1 张。" if "easy" in pool else ""
+        extra = " fundamentals 优先 easy；六张卡里 medium 最多 1 张。" if "easy" in pool else ""
         return f"- 本场是简单场：禁止选 hard。{extra} scenario 可以是 easy 或 medium。"
     if difficulty == "medium":
         lines = ["- 本场是中等场：hard 最多 1 张，若选用则放在 scenario。"]
         if "medium" in pool:
-            lines.append("- 三张卡里至少 1 张 medium。")
+            lines.append("- 六张卡里至少 1 张 medium。")
         return "\n".join(lines)
     lines = ["- 本场是困难场：fundamentals 可用 easy 或 medium 热身。"]
     if "hard" in pool:
@@ -314,9 +325,22 @@ def _card_matches(
         return True
     return bool(set(card.skill_tags or []) & resume_skills)
 
+# 获取简历中的项目名，去重且保持顺序
+def _project_names(profile: ResumeProfile) -> list[str]:
+    names: list[str] = []
+    seen: set[str] = set()
+    for item in profile.projects:
+        name = item.name.strip() if item.name else ""
+        if not name or name in seen:
+            continue
+        names.append(name)
+        seen.add(name)
+    return names
+
+
 # 获取简历中的项目名和公司名
 def _anchors(profile: ResumeProfile) -> list[str]:
-    projects = [item.name.strip() for item in profile.projects if item.name and item.name.strip()]
+    projects = _project_names(profile)
     if projects:
         return projects
     companies = [
@@ -374,15 +398,43 @@ async def pick_cards(
     ]
     return _sample_by_quota(matched, difficulty)
 
+def _ordered_project_probes(
+    probes: list[_PlanProjectProbe],
+    project_names: list[str],
+) -> list[_PlanProjectProbe]:
+    lo, hi = PROJECT_QUESTIONS_PER_PROJECT
+    if not project_names:
+        if probes:
+            raise PlanGenerationError("project_probe must be empty without projects")
+        return []
+
+    grouped: dict[str, list[_PlanProjectProbe]] = {name: [] for name in project_names}
+    for item in probes:
+        if item.resume_anchor not in grouped:
+            raise PlanGenerationError("project resume_anchor is not a project")
+        if item.max_turns not in SCORED_TURNS:
+            raise PlanGenerationError("project_probe max_turns must be 2 or 3")
+        grouped[item.resume_anchor].append(item)
+
+    ordered: list[_PlanProjectProbe] = []
+    for name in project_names:
+        count = len(grouped[name])
+        if count < lo or count > hi:
+            raise PlanGenerationError("each project must have 1 or 2 questions")
+        ordered.extend(grouped[name])
+    return ordered
+
+
 # 构建面试计划
 def _build_plan(
     middle: _GeneratedMiddlePlan,
     candidate_cards: list[TopicCard],
+    project_names: list[str],
     allowed_anchors: list[str],
     difficulty: Difficulty,
 ) -> InterviewPlan:
     fund_keys = [item.topic_card_key for item in middle.fundamentals]
-    if len(set(fund_keys)) != 2:
+    if len(fund_keys) != FUNDAMENTALS_COUNT or len(set(fund_keys)) != FUNDAMENTALS_COUNT:
         raise PlanGenerationError("fundamentals keys must be unique")
     if middle.scenario.topic_card_key in fund_keys:
         raise PlanGenerationError("scenario key overlaps fundamentals")
@@ -399,66 +451,66 @@ def _build_plan(
         card_difficulty,
     )
 
-    if middle.fundamentals[0].max_turns not in (2, 3) or middle.fundamentals[1].max_turns not in (2, 3):
+    if any(item.max_turns not in SCORED_TURNS for item in middle.fundamentals):
         raise PlanGenerationError("fundamentals max_turns must be 2 or 3")
-    if middle.scenario.max_turns not in (3, 4):
-        raise PlanGenerationError("scenario max_turns must be 3 or 4")
+    if middle.scenario.max_turns not in SCORED_TURNS:
+        raise PlanGenerationError("scenario max_turns must be 2 or 3")
+    if middle.scenario.resume_anchor and middle.scenario.resume_anchor not in allowed_anchors:
+        raise PlanGenerationError("resume_anchor is not in the resume")
 
-    for stage in (middle.project_probe, middle.scenario):
-        if stage.resume_anchor and stage.resume_anchor not in allowed_anchors:
-            raise PlanGenerationError("resume_anchor is not in the resume")
-
-    return InterviewPlan(
-        stages=[
+    project_probes = _ordered_project_probes(middle.project_probe, project_names)
+    stages: list[InterviewStage] = [
+        InterviewStage(
+            id="s1",
+            kind="intro",
+            goal="一分钟自我介绍，接到最近项目或经历",
+            max_turns=1,
+            source="resume",
+        )
+    ]
+    for item in project_probes:
+        stages.append(
             InterviewStage(
-                id="s1",
-                kind="intro",
-                goal="一分钟自我介绍，接到最近项目或经历",
-                max_turns=1,
-                source="resume",
-            ),
-            InterviewStage(
-                id="s2",
+                id=f"s{len(stages) + 1}",
                 kind="project_probe",
-                goal=middle.project_probe.goal,
-                max_turns=middle.project_probe.max_turns,
+                goal=item.goal,
+                max_turns=item.max_turns,
                 source="resume",
-                resume_anchor=middle.project_probe.resume_anchor,
-            ),
+                resume_anchor=item.resume_anchor,
+            )
+        )
+    for item in middle.fundamentals:
+        stages.append(
             InterviewStage(
-                id="s3",
+                id=f"s{len(stages) + 1}",
                 kind="fundamentals",
-                goal=middle.fundamentals[0].goal,
-                max_turns=middle.fundamentals[0].max_turns,
+                goal=item.goal,
+                max_turns=item.max_turns,
                 source="bank",
-                topic_card_key=middle.fundamentals[0].topic_card_key,
-            ),
-            InterviewStage(
-                id="s4",
-                kind="fundamentals",
-                goal=middle.fundamentals[1].goal,
-                max_turns=middle.fundamentals[1].max_turns,
-                source="bank",
-                topic_card_key=middle.fundamentals[1].topic_card_key,
-            ),
-            InterviewStage(
-                id="s5",
-                kind="scenario",
-                goal=middle.scenario.goal,
-                max_turns=middle.scenario.max_turns,
-                source="bank",
-                resume_anchor=middle.scenario.resume_anchor,
-                topic_card_key=middle.scenario.topic_card_key,
-            ),
-            InterviewStage(
-                id="s6",
-                kind="closing",
-                goal="收尾，请候选人提问",
-                max_turns=1,
-                source="resume",
-            ),
-        ]
+                topic_card_key=item.topic_card_key,
+            )
+        )
+    stages.append(
+        InterviewStage(
+            id=f"s{len(stages) + 1}",
+            kind="scenario",
+            goal=middle.scenario.goal,
+            max_turns=middle.scenario.max_turns,
+            source="bank",
+            resume_anchor=middle.scenario.resume_anchor,
+            topic_card_key=middle.scenario.topic_card_key,
+        )
     )
+    stages.append(
+        InterviewStage(
+            id=f"s{len(stages) + 1}",
+            kind="closing",
+            goal="收尾，请候选人提问",
+            max_turns=1,
+            source="resume",
+        )
+    )
+    return InterviewPlan(stages=stages)
 
 # 生成面试计划
 async def generate_plan(
@@ -468,14 +520,16 @@ async def generate_plan(
     difficulty: Difficulty,
     candidate_cards: list[TopicCard],
 ) -> InterviewPlan:
-    if len(candidate_cards) < 3:
+    if len(candidate_cards) < MIN_PLAN_CARDS:
         raise PlanGenerationError("not enough topic cards")
 
+    project_names = _project_names(profile)
     allowed_anchors = _anchors(profile)
     user_payload = {
         "target_role": target_role,
         "difficulty": difficulty,
         "profile": profile.model_dump(),
+        "projects": project_names,
         "allowed_anchors": allowed_anchors,
         "candidate_cards": _candidate_payload(candidate_cards),
     }
@@ -500,7 +554,13 @@ async def generate_plan(
             if not raw:
                 raise PlanGenerationError("empty plan")
             middle = _GeneratedMiddlePlan.model_validate_json(raw)
-            return _build_plan(middle, candidate_cards, allowed_anchors, difficulty)
+            return _build_plan(
+                middle,
+                candidate_cards,
+                project_names,
+                allowed_anchors,
+                difficulty,
+            )
         except Exception as exc:
             last_error = exc
             logger.warning("plan retry attempt=%s error=%s", attempt + 1, exc)
