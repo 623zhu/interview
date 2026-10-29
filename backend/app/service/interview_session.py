@@ -38,7 +38,7 @@ MAX_CANDIDATE_CARDS = 12
 PLAN_RETRY = 1
 FUNDAMENTALS_COUNT = 5
 MIN_PLAN_CARDS = FUNDAMENTALS_COUNT + 1
-SCORED_TURNS = (2, 3)
+SCORED_TURNS = (1, 2)
 PROJECT_QUESTIONS_PER_PROJECT = (1, 2)
 INTRO_QUESTION = "先做个一分钟自我介绍吧，可以结合你最近的项目。"
 SCENARIO_SKILL_TAGS = {"mq", "http", "distributed"}
@@ -60,20 +60,21 @@ GENERATE_PLAN_PROMPT = """
 
 JSON 形状：
 {
-  "project_probe": [
-    {"goal": "本问考察目标", "max_turns": 2, "resume_anchor": "项目名"},
-    {"goal": "同一项目的另一问，或下一个项目", "max_turns": 3, "resume_anchor": "项目名"}
-  ],
+  "project_probe": {
+    "goal": "本阶段考察目标",
+    "max_turns": 4,
+    "resume_anchor": "项目名或公司名，没有可用锚点时为 null"
+  },
   "fundamentals": [
-    {"goal": "考察目标", "max_turns": 2, "topic_card_key": "候选卡 key"},
-    {"goal": "考察目标", "max_turns": 3, "topic_card_key": "另一个候选卡 key"},
-    {"goal": "考察目标", "max_turns": 2, "topic_card_key": "第三个候选卡 key"},
+    {"goal": "考察目标", "max_turns": 1, "topic_card_key": "候选卡 key"},
+    {"goal": "考察目标", "max_turns": 2, "topic_card_key": "另一个候选卡 key"},
+    {"goal": "考察目标", "max_turns": 1, "topic_card_key": "第三个候选卡 key"},
     {"goal": "考察目标", "max_turns": 2, "topic_card_key": "第四个候选卡 key"},
-    {"goal": "考察目标", "max_turns": 3, "topic_card_key": "第五个候选卡 key"}
+    {"goal": "考察目标", "max_turns": 1, "topic_card_key": "第五个候选卡 key"}
   ],
   "scenario": {
     "goal": "考察目标",
-    "max_turns": 2,
+    "max_turns": 3,
     "topic_card_key": "候选卡 key",
     "resume_anchor": "能联系上的项目名，没有则为 null"
   }
@@ -84,7 +85,7 @@ JSON 形状：
 - 每条 project_probe.resume_anchor 必须是 projects 中的项目名，不要用公司名或技能名凑。
 - fundamentals 必须恰好 5 条,key 互不相同，且都在候选卡里。
 - scenario 的 key 在候选卡里，且不能与 fundamentals 重复。
-- project_probe、fundamentals、scenario 的 max_turns 都取 2-3。
+- project_probe、fundamentals、scenario 的 max_turns 都取 1-2。
 - scenario.resume_anchor 必须是 allowed_anchors 中的一项，或为 null。
 - 遵守本场难度混搭规则。
 """
@@ -413,7 +414,7 @@ def _ordered_project_probes(
         if item.resume_anchor not in grouped:
             raise PlanGenerationError("project resume_anchor is not a project")
         if item.max_turns not in SCORED_TURNS:
-            raise PlanGenerationError("project_probe max_turns must be 2 or 3")
+            raise PlanGenerationError("project_probe max_turns must be 1 or 2")
         grouped[item.resume_anchor].append(item)
 
     ordered: list[_PlanProjectProbe] = []
@@ -452,9 +453,9 @@ def _build_plan(
     )
 
     if any(item.max_turns not in SCORED_TURNS for item in middle.fundamentals):
-        raise PlanGenerationError("fundamentals max_turns must be 2 or 3")
+        raise PlanGenerationError("fundamentals max_turns must be 1 or 2")
     if middle.scenario.max_turns not in SCORED_TURNS:
-        raise PlanGenerationError("scenario max_turns must be 2 or 3")
+        raise PlanGenerationError("scenario max_turns must be 1 or 2")
     if middle.scenario.resume_anchor and middle.scenario.resume_anchor not in allowed_anchors:
         raise PlanGenerationError("resume_anchor is not in the resume")
 

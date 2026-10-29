@@ -134,9 +134,9 @@ flowchart TD
 | 顺序 | kind | source | max_turns | 谁定内容 |
 | --- | --- | --- | --- | --- |
 | 1 | `intro` | resume | 1 | 代码写死 |
-| 随后 | `project_probe` | resume | 各 2～3 | 每个项目 1～2 问，每问单独一段；无项目则跳过 |
-| 再后 | `fundamentals` | bank | 各 2～3 | 模型从候选卡里挑 5 张 |
-| 再后 | `scenario` | bank | 2～3 | 模型再挑 1 张偏场景的卡 |
+| 随后 | `project_probe` | resume | 各 1～2 | 每个项目 1～2 问，每问单独一段；无项目则跳过 |
+| 再后 | `fundamentals` | bank | 各 1～2 | 模型从候选卡里挑 5 张 |
+| 再后 | `scenario` | bank | 1～2 | 模型再挑 1 张偏场景的卡 |
 | 最后 | `closing` | resume | 1 | 代码写死；问句打出后不等回答，当场结束 |
 
 阶段结构：
