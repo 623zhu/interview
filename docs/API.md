@@ -48,7 +48,7 @@
 Authorization: Bearer <access_token>
 ```
 
-缺少 Token、格式不是 Bearer、签名无效、过期或用户不存在时返回 `401`，响应体 `{"detail": "Unauthorized"}`。刷新令牌存在 Redis `token:refresh:{user_id}`，同一用户新登录或刷新成功会覆盖旧刷新令牌。重置密码成功会删除该键，旧刷新令牌立即失效。访问令牌有效期由 `JWT_ACCESS_TOKEN_EXPIRES_MINUTES` 控制，刷新令牌由 `JWT_REFRESH_TOKEN_EXPIRES_DAYS` 控制。访问令牌过期后，用刷新令牌调用 `POST /api/v1/users/session/refresh` 换发新的一对令牌；刷新令牌无效或过期则重新登录。
+缺少 Token、格式不是 Bearer、签名无效、过期或用户不存在时返回 `401`，响应体 `{"detail": "Unauthorized"}`。刷新令牌存在 Redis `token:refresh:{user_id}`，同一用户新登录或刷新成功会覆盖旧刷新令牌。重置密码成功会删除该键，旧刷新令牌立即失效。访问令牌有效期由 `JWT_ACCESS_TOKEN_EXPIRES_MINUTES` 控制，刷新令牌由 `JWT_REFRESH_TOKEN_EXPIRES_DAYS` 控制。访问令牌过期后，用刷新令牌调用 `POST /api/v1/users/session/refresh` 换发新的一对令牌；刷新令牌无效或过期则重新登录。前端 JSON 请求与面试流式提交共用这次刷新：过期时先换票再重试，刷新失败再跳登录。
 
 ## 健康检查
 
@@ -520,7 +520,7 @@ Authorization: Bearer <access_token>
 
 没有待答轮次、场次已结束或已放弃返回 `409`。场次不存在或不属于当前用户返回 `404`。空回答返回 `422`，文案「回答不能为空」；当前待答是收尾句时允许空回答。评估或出题失败返回 `500`，文案「处理本轮回答失败」。
 
-请求头 `Accept` 包含 `text/event-stream` 时，同一路径改为 SSE。先校验场次能否作答：不存在仍返回 `404`，无法作答仍返回 `409`。通过后响应 `200`，`Content-Type` 为 `text/event-stream`。评估阶段先发 `status`，出题时模型 token 到达即发 `delta`，落库后再发 `done`。图仍在一次请求内跑完，不保存跨请求状态。
+请求头 `Accept` 包含 `text/event-stream` 时，同一路径改为 SSE。先校验场次能否作答：不存在仍返回 `404`，无法作答仍返回 `409`。通过后响应 `200`，`Content-Type` 为 `text/event-stream`。评估阶段先发 `status`，出题时模型 token 到达即发 `delta`，落库后再发 `done`。图仍在一次请求内跑完，不保存跨请求状态。前端提交前若访问令牌将过期会先刷新；若仍收到 `401` 再刷新并重试一次。
 
 ```
 event: status

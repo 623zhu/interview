@@ -1,5 +1,7 @@
 import { useAuthStore } from '@/stores/auth'
 
+const ACCESS_REFRESH_SKEW_SECONDS = 60
+
 export class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -13,7 +15,7 @@ export type RequestOptions = RequestInit & {
   skipRefresh?: boolean
 }
 
-function errorMessage(detail: unknown): string {
+export function errorMessage(detail: unknown): string {
   if (typeof detail === 'string') {
     return detail
   }
@@ -27,24 +29,59 @@ function errorMessage(detail: unknown): string {
 
 let refreshPromise: Promise<boolean> | null = null
 
-async function refreshAccessToken(): Promise<boolean> {
-  const auth = useAuthStore()
-  if (!auth.refreshToken) return false
+function accessTokenExp(token: string): number | null {
+  const parts = token.split('.')
+  if (parts.length < 2) return null
   try {
-    const { refreshToken } = await import('./user')
-    const result = await refreshToken(auth.refreshToken)
-    auth.setTokens(result.access_token, result.refresh_token)
-    return true
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const pad = base64.length % 4
+    const padded = pad ? `${base64}${'='.repeat(4 - pad)}` : base64
+    const payload = JSON.parse(atob(padded)) as { exp?: number }
+    return typeof payload.exp === 'number' ? payload.exp : null
   } catch {
-    return false
+    return null
   }
 }
 
-function forceLogin() {
+function accessTokenNeedsRefresh(token: string): boolean {
+  const exp = accessTokenExp(token)
+  if (exp == null) return false
+  return exp <= Date.now() / 1000 + ACCESS_REFRESH_SKEW_SECONDS
+}
+
+export async function refreshAccessToken(): Promise<boolean> {
+  if (refreshPromise) return refreshPromise
+  refreshPromise = (async () => {
+    const auth = useAuthStore()
+    if (!auth.refreshToken) return false
+    try {
+      const { refreshToken } = await import('./user')
+      const result = await refreshToken(auth.refreshToken)
+      auth.setTokens(result.access_token, result.refresh_token)
+      return true
+    } catch {
+      return false
+    }
+  })().finally(() => {
+    refreshPromise = null
+  })
+  return refreshPromise
+}
+
+export function forceLogin() {
   useAuthStore().clear()
   if (!window.location.pathname.startsWith('/login')) {
     window.location.replace('/login')
   }
+}
+
+export async function ensureFreshAccessToken(options: { force?: boolean } = {}): Promise<boolean> {
+  const auth = useAuthStore()
+  if (!options.force && auth.accessToken && !accessTokenNeedsRefresh(auth.accessToken)) {
+    return true
+  }
+  if (!auth.refreshToken) return false
+  return refreshAccessToken()
 }
 
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -73,12 +110,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       Boolean(accessToken) &&
       !path.includes('/users/session')
     if (canRefresh) {
-      if (!refreshPromise) {
-        refreshPromise = refreshAccessToken().finally(() => {
-          refreshPromise = null
-        })
-      }
-      const ok = await refreshPromise
+      const ok = await refreshAccessToken()
       if (ok) {
         return request<T>(path, { ...options, skipRefresh: true })
       }
@@ -86,8 +118,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     } else if (response.status === 401 && accessToken) {
       forceLogin()
     }
-    const detail = body?.detail
-    throw new ApiError(response.status, errorMessage(detail))
+    throw new ApiError(response.status, errorMessage(body?.detail))
   }
   return body as T
 }

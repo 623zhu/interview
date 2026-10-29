@@ -1,4 +1,4 @@
-import { ApiError, request } from './http'
+import { ApiError, ensureFreshAccessToken, errorMessage, forceLogin, request } from './http'
 import { readSseStream } from './sse'
 import { useAuthStore } from '@/stores/auth'
 
@@ -109,13 +109,7 @@ export function submitInterviewTurn(id: number, answer: string) {
   })
 }
 
-export async function submitInterviewTurnStream(
-  id: number,
-  answer: string,
-  onEvent: (event: string, data: unknown) => void,
-  signal?: AbortSignal,
-) {
-  const accessToken = useAuthStore().accessToken
+function fetchTurnStream(id: number, answer: string, accessToken: string, signal?: AbortSignal) {
   const headers = new Headers({
     Accept: 'text/event-stream',
     'Content-Type': 'application/json',
@@ -123,19 +117,46 @@ export async function submitInterviewTurnStream(
   if (accessToken) {
     headers.set('Authorization', `Bearer ${accessToken}`)
   }
-  const response = await fetch(`/api/api/v1/interview-sessions/${id}/turns`, {
+  return fetch(`/api/api/v1/interview-sessions/${id}/turns`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ answer }),
     cache: 'no-store',
     signal,
   })
+}
+
+async function throwStreamError(response: Response): Promise<never> {
+  const body = await response.json().catch(() => null)
+  throw new ApiError(response.status, errorMessage(body?.detail))
+}
+
+export async function submitInterviewTurnStream(
+  id: number,
+  answer: string,
+  onEvent: (event: string, data: unknown) => void,
+  signal?: AbortSignal,
+) {
+  await ensureFreshAccessToken()
+  if (!useAuthStore().accessToken) {
+    forceLogin()
+    throw new ApiError(401, 'Unauthorized')
+  }
+
+  let response = await fetchTurnStream(id, answer, useAuthStore().accessToken, signal)
+  if (response.status === 401) {
+    const ok = await ensureFreshAccessToken({ force: true })
+    if (!ok) {
+      forceLogin()
+      throw new ApiError(401, 'Unauthorized')
+    }
+    response = await fetchTurnStream(id, answer, useAuthStore().accessToken, signal)
+  }
   if (!response.ok) {
-    const body = await response.json().catch(() => null)
-    const detail = body?.detail
-    const message =
-      typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map((item: { msg?: string }) => item.msg ?? '').join(';') : '请求失败'
-    throw new ApiError(response.status, message)
+    if (response.status === 401) {
+      forceLogin()
+    }
+    await throwStreamError(response)
   }
   await readSseStream(response, onEvent)
 }
